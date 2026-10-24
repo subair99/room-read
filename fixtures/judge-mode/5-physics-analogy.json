@@ -1,0 +1,9 @@
+{
+  "id": "physics-analogy",
+  "title": "Physics analogy",
+  "mode": "check",
+  "audience": { "ageBand": "18-34" },
+  "script": "Momentum is why a Fast & Furious car can't stop on a dime.\nFriction is the reason your Roomba gives up on the rug.\nAnd conservation of energy is why Sonic can't really run forever.",
+  "note": "Original lesson lines for a university intro class.",
+  "cached": null
+}

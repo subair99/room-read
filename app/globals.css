@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #fbfaf7;
+  --panel: #ffffff;
+  --ink: #17171a;
+  --muted: #5d5d66;
+  --line: #e6e3dc;
+  --green: #1a7f37;
+  --amber: #b26b00;
+  --red: #c62828;
+  --accent: #3b3bd6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121214;
+    --panel: #1b1b1f;
+    --ink: #ecebf0;
+    --muted: #a3a2ad;
+    --line: #2c2c33;
+    --green: #4cc26d;
+    --amber: #e3a33a;
+    --red: #ff6b6b;
+    --accent: #8c8cff;
+  }
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.band-green { background: color-mix(in srgb, var(--green) 18%, transparent); border-bottom: 2px solid var(--green); }
+.band-amber { background: color-mix(in srgb, var(--amber) 18%, transparent); border-bottom: 2px solid var(--amber); }
+.band-red { background: color-mix(in srgb, var(--red) 18%, transparent); border-bottom: 2px solid var(--red); }
+.band-unknown { border-bottom: 2px dashed var(--muted); }

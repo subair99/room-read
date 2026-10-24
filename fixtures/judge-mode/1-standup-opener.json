@@ -1,0 +1,9 @@
+{
+  "id": "standup-opener",
+  "title": "Stand-up opener",
+  "mode": "check",
+  "audience": { "ageBand": "18-34", "city": "Houston" },
+  "script": "My dad still thinks he can win any argument with a Seinfeld quote.\nLast week he tried one on my landlord. The rent went up.\nMy roommate plans her whole week around Love Island.\nAnd I still log into MySpace just to see who made my top eight in 2007.",
+  "note": "Original material. Expected beat: one red reference turns green after a re-checked swap.",
+  "cached": null
+}
