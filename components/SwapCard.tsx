@@ -8,6 +8,7 @@ export function SwapCard({ result, onAccept }: { result: SwapResult; onAccept: (
     <div className="panel flex flex-col gap-2 p-4 text-sm">
       <h3 className="font-semibold">Swap attempts</h3>
       <p className="text-[var(--muted)]">Original: {result.originalLine}</p>
+      {result.summary && <p className="text-xs text-[var(--muted)]">{result.summary}</p>}
       <ol className="flex flex-col gap-2">
         {result.attempts.map((a, i) => (
           <li key={i} className={`rounded border p-2 ${a.accepted ? "border-[var(--green)]" : "border-[var(--line)]"}`}>
@@ -25,7 +26,15 @@ export function SwapCard({ result, onAccept }: { result: SwapResult; onAccept: (
           Accept swap
         </button>
       )}
-      {result.flagged && <p className="font-semibold text-[var(--red)]">{result.reason}</p>}
+      {result.flagged && <p className="font-semibold text-[var(--amber)]">{result.reason}</p>}
+      {result.flagged && result.attempts.find((a) => a.step === "restructure" && a.rewrittenLine) && (
+        <button
+          onClick={() => onAccept(result.attempts.find((a) => a.step === "restructure")!.rewrittenLine!)}
+          className="self-start rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
+        >
+          Drop the reference instead
+        </button>
+      )}
     </div>
   );
 }

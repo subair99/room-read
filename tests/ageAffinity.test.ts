@@ -39,3 +39,26 @@ describe("trend from weekly percentiles", () => {
     expect(trendFromSeries([0.5])).toBe("unknown");
   });
 });
+
+import { relativeAgeBand, relativePosition } from "../lib/agent/ageAffinity";
+
+describe("relative age band (vs anchors)", () => {
+  // e.g. 55+ indices for well-known artists: everything under-indexes
+  const anchors = [-0.9, -0.85, -0.8, -0.7, -0.6, -0.3];
+  it("a title that under-indexes can still be top third against its peers", () => {
+    expect(relativeAgeBand(-0.5, anchors, 0.99)).toEqual({ band: "green", rank: 2, outOf: 7 });
+  });
+  it("bottom of the anchors is red", () => {
+    expect(relativeAgeBand(-0.95, anchors, 0.99).band).toBe("red");
+  });
+  it("falls back to fixed thresholds with too few anchors", () => {
+    expect(relativeAgeBand(0.3, [0.1], 0.99)).toEqual({ band: "green", rank: null, outOf: 0 });
+  });
+  it("niche titles can't be green", () => {
+    expect(relativeAgeBand(0, anchors, 0.2).band).toBe("amber");
+  });
+  it("position runs 0 (best) to 1 (worst)", () => {
+    expect(relativePosition(0, anchors)).toBe(0);
+    expect(relativePosition(-1, anchors)).toBe(1);
+  });
+});

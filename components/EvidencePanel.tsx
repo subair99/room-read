@@ -60,7 +60,10 @@ export function EvidencePanel({
           {scores.map((s) => (
             <tr key={s.audience}>
               <td>{s.audience}</td>
-              <td>{typeof s.ageIndex === "number" ? `${s.ageIndex >= 0 ? "+" : ""}${s.ageIndex.toFixed(2)}` : "—"}</td>
+              <td>
+                {typeof s.ageIndex === "number" ? `${s.ageIndex >= 0 ? "+" : ""}${s.ageIndex.toFixed(2)}` : "—"}
+                {s.ageRank ? <span className="text-xs text-[var(--muted)]"> ({s.ageRank}/{s.ageOutOf})</span> : null}
+              </td>
               <td>{s.rank === null ? "—" : `${s.rank} of ${s.outOf}`}</td>
               <td><span className={`band-${s.band} px-1`}>{s.band}</span></td>
               <td>{s.trend === "unknown" ? "—" : s.trend}</td>

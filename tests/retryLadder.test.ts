@@ -28,15 +28,18 @@ describe("retry ladder", () => {
     expect(r.flagged).toBe(true);
   });
 
-  it("restructures when no equivalent ranks higher, then stops", async () => {
+  it("offers (but never auto-applies) a version without the reference", async () => {
     const r = await runLadder("ref_0", "line", 0.5, {
       candidates: [e("A"), e("B"), e("C")],
       compare: async () => ({ candidate: 0.8, original: 0.5 }),
       rewrite: async (c) => c.name,
       restructure: async () => "restructured line",
     });
-    expect(r.accepted?.step).toBe("restructure");
-    expect(r.attempts.length).toBeLessThanOrEqual(3);
+    expect(r.accepted).toBeUndefined();
+    expect(r.flagged).toBe(true);
+    expect(r.attempts.find((a) => a.step === "restructure")?.rewrittenLine).toBe("restructured line");
+    // Candidates rejected on scores alone cost no rewrite.
+    expect(r.attempts.filter((a) => a.rewrittenLine).length).toBeLessThanOrEqual(3);
   });
 
   it("skips a candidate that is better but still doesn't land", async () => {

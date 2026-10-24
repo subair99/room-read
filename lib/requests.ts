@@ -17,18 +17,22 @@ export const EntitySchema = z.object({ entityId: z.string(), name: z.string(), t
 
 export const ScriptSchema = z.string().trim().min(1).max(4000);
 
+const EntityWithMetaSchema = EntitySchema.extend({ year: z.number().optional(), popularity: z.number().optional(), description: z.string().optional() });
+
 export const CheckBodySchema = z.object({
   script: ScriptSchema,
   audience: AudienceInputSchema,
   rules: RulesSchema,
-  confirmed: z.record(EntitySchema).optional(),
+  confirmed: z.record(EntityWithMetaSchema).optional(),
+  confirmedByText: z.record(EntityWithMetaSchema).optional(),
 });
 
 export const BridgeBodySchema = z.object({
   script: ScriptSchema,
   audiences: z.tuple([AudienceInputSchema, AudienceInputSchema]),
   rules: RulesSchema,
-  confirmed: z.record(EntitySchema).optional(),
+  confirmed: z.record(EntityWithMetaSchema).optional(),
+  confirmedByText: z.record(EntityWithMetaSchema).optional(),
 });
 
 export const TourBodySchema = z.object({
@@ -36,6 +40,7 @@ export const TourBodySchema = z.object({
   cities: z.array(z.string().trim().min(1)).min(2).max(5),
   ageBand: AgeBandSchema.optional(),
   rules: RulesSchema,
+  confirmedByText: z.record(EntityWithMetaSchema).optional(),
   promo: z.object({ show: z.string().trim().min(3).max(300), city: z.string().trim().min(1) }).optional(),
 });
 

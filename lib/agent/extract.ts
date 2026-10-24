@@ -8,19 +8,20 @@ const ExtractedSchema = z.array(
     text: z.string().min(1),
     line: z.number().int().min(0),
     kind: z.string().default("other"),
+    canonical: z.string().optional(),
   }),
 );
 
 /** LLM pulls named references out of the script; we compute exact offsets. */
 export async function extractReferences(script: string): Promise<Reference[]> {
-  const items = await completeJson<Array<{ text: string; line: number; kind: string }>>({ system: EXTRACT_SYSTEM, user: extractUser(script) }, ExtractedSchema);
+  const items = await completeJson<Array<{ text: string; line: number; kind: string; canonical?: string }>>({ system: EXTRACT_SYSTEM, user: extractUser(script) }, ExtractedSchema);
   return locateReferences(script, items);
 }
 
 /** Pure: turn {text, line} items into references with character offsets. */
 export function locateReferences(
   script: string,
-  items: Array<{ text: string; line: number; kind: string }>,
+  items: Array<{ text: string; line: number; kind: string; canonical?: string }>,
 ): Reference[] {
   const lines = script.split("\n");
   const lineStart: number[] = [];
@@ -47,6 +48,7 @@ export function locateReferences(
       start,
       end: start + it.text.length,
       kind: it.kind,
+      canonical: it.canonical && it.canonical.toLowerCase() !== it.text.toLowerCase() ? it.canonical : undefined,
     });
   }
   return refs;

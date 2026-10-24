@@ -42,7 +42,7 @@ The LLM handles language. Qloo makes every judgment. Plain code enforces the ord
 
 ### Scoring rules
 
-1. **Age: who over-indexes.** `qloo_audience_demographics` gives, for every title, how much each age bucket over- or under-indexes. RoomRead averages the buckets in the chosen band: ≥ +0.10 green, ≤ −0.15 red, otherwise amber. Titles with Qloo popularity below 0.5 can't be green (too niche to be familiar). Thresholds are RoomRead's interpretation, labelled as such.
+1. **Age: who over-indexes, relative to well-known titles.** `qloo_audience_demographics` gives, for every title, how much each age bucket over- or under-indexes. RoomRead averages the buckets in the chosen band, then ranks that number among the same anchors (well-known titles of the same type) for the same band: top third green, middle amber, bottom third red. Comparing against anchors cancels category skew (55+ under-indexes for most artists in Qloo's data, for example). Titles with Qloo popularity below 0.5 can't be green (too niche to be familiar). This is RoomRead's interpretation, labelled as such.
 2. **City: rank within one query, against anchors.** `qloo_rank` with the city as `signal_location`, together with a fixed set of well-known titles, so positions are never mixed across queries. A reference Qloo doesn't return for that city shows as "not in the city ranking".
 3. **Bridge.** Choose the reference whose worse audience rank is best; ties go to the better average.
 4. **A swap must earn it.** A candidate is accepted only if it ranks higher than the original in the same query and the rewritten line actually contains it.

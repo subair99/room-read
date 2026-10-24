@@ -42,15 +42,36 @@ export function getQloo(): Promise<Client> {
   return holder.promise;
 }
 
+/** Per-call limit. A hung call becomes a retryable error instead of blocking for 60 s. */
+export const QLOO_TIMEOUT_MS = Number(process.env.QLOO_TIMEOUT_MS || 25_000);
+
 /** Call one harness tool and parse the standard envelope. */
 export async function callQlooTool(name: string, args: Record<string, unknown>): Promise<QlooEnvelope> {
   const client = await getQloo();
-  const res = (await client.callTool({ name, arguments: args })) as {
+  let res: unknown;
+  try {
+    res = await client.callTool({ name, arguments: args }, undefined, { timeout: QLOO_TIMEOUT_MS });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const timedOut = /timed out|-32001/i.test(msg);
+    return {
+      status: "error",
+      summary: timedOut ? `Qloo took longer than ${QLOO_TIMEOUT_MS / 1000}s` : msg,
+      results: [],
+      result_count: 0,
+      error: { code: timedOut ? "QLOO_TIMEOUT" : "QLOO_TRANSPORT", retryable: timedOut },
+    };
+  }
+  return parseResult(res);
+}
+
+function parseResult(res: unknown): QlooEnvelope {
+  const r = res as {
     structuredContent?: unknown;
     content?: Array<{ type: string; text?: string }>;
     isError?: boolean;
   };
-  const raw = res.structuredContent ?? parseTextContent(res.content);
+  const raw = r.structuredContent ?? parseTextContent(r.content);
   return QlooEnvelopeSchema.parse(raw) as QlooEnvelope;
 }
 

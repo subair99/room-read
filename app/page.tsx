@@ -38,6 +38,8 @@ export default function Home() {
   const [swap, setSwap] = useState<SwapResult | null>(null);
   const [swapReceipts, setSwapReceipts] = useState<EvidenceRecord[]>([]);
   const [confirmed, setConfirmed] = useState<Record<string, ResolvedEntity>>({});
+  // Swaps you accepted: re-checks reuse the exact entity instead of resolving the name again.
+  const [byText, setByText] = useState<Record<string, ResolvedEntity>>({});
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(true);
   const [promoReq, setPromoReq] = useState<{ show: string; city: string } | undefined>();
@@ -51,10 +53,11 @@ export default function Home() {
 
   const selected = verdicts.find((v) => v.reference.id === selectedId);
 
-  async function run(override?: { script?: string; aud?: AudienceState; confirmed?: Record<string, ResolvedEntity>; promo?: { show: string; city: string } | null }) {
+  async function run(override?: { script?: string; aud?: AudienceState; confirmed?: Record<string, ResolvedEntity>; byText?: Record<string, ResolvedEntity>; promo?: { show: string; city: string } | null }) {
     const s = override?.script ?? script;
     const a = override?.aud ?? aud;
     const conf = override?.confirmed ?? confirmed;
+    const named = override?.byText ?? byText;
     if (!s.trim()) return;
     setBusy(true);
     setError(null);
@@ -75,11 +78,11 @@ export default function Home() {
 
     try {
       if (a.mode === "bridge") {
-        await streamAgent("/api/bridge", { script: s, audiences: [{ ageBand: a.ageBand, city: a.city || undefined }, { ageBand: a.ageBandB, city: a.cityB || undefined }], rules: a.rules, confirmed: conf }, onEvent);
+        await streamAgent("/api/bridge", { script: s, audiences: [{ ageBand: a.ageBand, city: a.city || undefined }, { ageBand: a.ageBandB, city: a.cityB || undefined }], rules: a.rules, confirmed: conf, confirmedByText: named }, onEvent);
       } else if (a.mode === "tour") {
-        await streamAgent("/api/tour", { script: s, cities: a.cities, ageBand: a.ageBand, rules: a.rules, promo: promoBody }, onEvent);
+        await streamAgent("/api/tour", { script: s, cities: a.cities, ageBand: a.ageBand, rules: a.rules, promo: promoBody, confirmedByText: named }, onEvent);
       } else {
-        await streamAgent("/api/check", { script: s, audience: { ageBand: a.ageBand, city: a.city || undefined }, rules: a.rules, confirmed: conf }, onEvent);
+        await streamAgent("/api/check", { script: s, audience: { ageBand: a.ageBand, city: a.city || undefined }, rules: a.rules, confirmed: conf, confirmedByText: named }, onEvent);
       }
     } finally {
       setBusy(false);
@@ -116,8 +119,14 @@ export default function Home() {
     const lines = script.split("\n");
     lines[selected.reference.line] = line;
     const next = lines.join("\n");
+    const entity = swap?.accepted?.candidate;
+    const nextByText = entity ? { ...byText, [entity.name.toLowerCase()]: entity } : byText;
+    setByText(nextByText);
     setScript(next);
-    run({ script: next }); // re-check the whole script after the change
+    // Re-check the whole script after the change, keeping identities stable.
+    // Confirmations by reference id are dropped: ids can shift when the text changes.
+    setConfirmed({});
+    run({ script: next, confirmed: {}, byText: nextByText });
   }
 
   function confirmEntity(refId: string, e: ResolvedEntity) {
@@ -139,8 +148,9 @@ export default function Home() {
     setScript(j.script);
     setAud(next);
     setConfirmed({});
+    setByText({});
     setPromoReq(j.promo);
-    run({ script: j.script, aud: next, confirmed: {}, promo: j.promo ?? null });
+    run({ script: j.script, aud: next, confirmed: {}, byText: {}, promo: j.promo ?? null });
   }
 
   const labels = audiences.map((a) => audienceLabel(a));

@@ -36,6 +36,8 @@ export interface Reference {
   end: number;
   /** LLM's guess at the kind of thing: tv_show, artist, brand, movie, place... */
   kind: string;
+  /** Full official title to look up, e.g. "Sonic the Hedgehog" for "Sonic" */
+  canonical?: string;
 }
 
 export interface ResolvedEntity {
@@ -68,6 +70,9 @@ export interface AudienceScore {
   outOf: number;
   /** Age signal: mean audience_demographics index for the age band (+ over-indexes, − under) */
   ageIndex?: number | null;
+  /** Age signal: position among well-known titles of the same type for this band (1 = best) */
+  ageRank?: number | null;
+  ageOutOf?: number;
   /** City signal: Qloo affinity from the city ranking, when returned */
   cityAffinity?: number | null;
   band: Band;
@@ -91,8 +96,10 @@ export interface CheckRequest {
   mode: Mode;
   audiences: Audience[];
   rules?: UserRules;
-  /** Pre-confirmed entity choices from a previous needs_input round */
+  /** Pre-confirmed entity choices from a previous needs_input round, by reference id */
   confirmed?: Record<string, ResolvedEntity>;
+  /** Entities confirmed by name (lower-case), e.g. a swap the user accepted */
+  confirmedByText?: Record<string, ResolvedEntity>;
 }
 
 export interface CheckResult {
@@ -124,6 +131,8 @@ export interface SwapResult {
   accepted?: SwapAttempt;
   flagged: boolean;
   reason: string;
+  /** One line on how candidates were filtered, for the swap card */
+  summary?: string;
 }
 
 /** Events streamed to the browser over SSE while the agent works. */

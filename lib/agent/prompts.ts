@@ -10,7 +10,7 @@ export function extractUser(script: string): string {
   return `Text (line numbers on the left):
 ${numbered}
 
-Return a JSON array. Each item: {"text": exact substring, "line": line number, "kind": one of tv_show|movie|artist|song|book|brand|person|place|game|podcast|other}.
+Return a JSON array. Each item: {"text": exact substring, "line": line number, "kind": one of tv_show|movie|artist|song|book|brand|person|place|game|podcast|other, "canonical": the full official name a database would list, e.g. "Sonic the Hedgehog" for "Sonic", "Spotify" for "Spotify Wrapped", "Game of Thrones" for "Game of Thrones finale"}.
 Return [] if there are none.`;
 }
 
@@ -57,4 +57,20 @@ function rulesText(rules: UserRules): string {
   if (rules.clean) parts.push("Keep it clean: no profanity or sexual content.");
   for (const c of rules.custom ?? []) parts.push(c);
   return parts.length ? `Rules: ${parts.join(" ")}` : "";
+}
+
+export const FIT_SYSTEM = `You are a comedy and copy editor. A reference in a line does a specific job:
+a famous diva, a famously bad ending, a cultural touchstone for a particular community, a nostalgic childhood show, and so on.
+You decide which candidate references could do the SAME job in the SAME line for a general audience.
+Reject candidates that are obscure, that change what the line is about, or that would make the line confusing.
+You do NOT judge popularity; that has already been measured. Judge only whether the line still works.`;
+
+export function fitUser(line: string, original: string, candidates: string[]): string {
+  return `Line: ${line}
+Original reference: "${original}"
+Candidates (already checked for audience fit): ${candidates.map((c) => `"${c}"`).join(", ")}
+
+First, in a few words, name the job "${original}" does in this line.
+Then list the candidates that can do the same job, best first. It's fine to return none.
+Return JSON: {"job": "...", "fits": [{"name": exact candidate name, "why": one short sentence}]}`;
 }

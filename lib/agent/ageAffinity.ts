@@ -7,8 +7,13 @@ import type { AgeBand, Band } from "../types";
  * Example (spike, Seinfeld): 55_and_older +0.28, 30_to_34 −0.50.
  *
  * Unlike rank, this exists for every entity Qloo knows, so classic references
- * aren't dropped. The thresholds below are RoomRead's interpretation, labelled
- * as such in the receipts. TODO(eval): calibrate on the 12 eval scripts.
+ * aren't dropped.
+ *
+ * Raw indices are skewed by category (e.g. 55+ under-indexes for most
+ * artists), so the band is RELATIVE: where the reference sits among the
+ * well-known anchors of the same type for the same age band (top third
+ * green, middle amber, bottom third red). The fixed thresholds are only a
+ * fallback when too few anchors have data.
  */
 export const BAND_BUCKETS: Record<AgeBand, string[]> = {
   "18-34": ["24_and_younger", "25_to_29", "30_to_34"],
@@ -31,6 +36,11 @@ export const GREEN_AT = 0.1;
 export const RED_AT = -0.15;
 /** Below this Qloo popularity, a title is too niche to count as familiar: green drops to amber. */
 export const NICHE_POPULARITY = 0.5;
+/**
+ * A swap must be MORE familiar than that: Seinfeld is 0.995, Stranger Things
+ * ~0.99. Set SWAP_MIN_POPULARITY to tune.
+ */
+export const SWAP_MIN_POPULARITY = Number(process.env.SWAP_MIN_POPULARITY || 0.9);
 
 export type AgeProfile = Record<string, number>;
 
@@ -46,6 +56,38 @@ export function bandFromIndex(index: number | null, popularity?: number): Band {
   let band: Band = index >= GREEN_AT ? "green" : index <= RED_AT ? "red" : "amber";
   if (band === "green" && popularity !== undefined && popularity < NICHE_POPULARITY) band = "amber";
   return band;
+}
+
+/** Minimum anchors with data before the relative band is trusted. */
+export const MIN_ANCHORS = 3;
+
+export interface RelativeAge {
+  band: Band;
+  /** 1 = highest index among [reference + anchors] for this band */
+  rank: number | null;
+  outOf: number;
+}
+
+/**
+ * Where the reference's index sits among the anchors' indices for the same
+ * age band. Ties go in the reference's favour. Niche titles can't be green.
+ */
+export function relativeAgeBand(index: number | null, anchorIndices: number[], popularity?: number): RelativeAge {
+  if (index === null) return { band: "unknown", rank: null, outOf: 0 };
+  if (anchorIndices.length < MIN_ANCHORS) return { band: bandFromIndex(index, popularity), rank: null, outOf: 0 };
+  const rank = 1 + anchorIndices.filter((a) => a > index).length;
+  const outOf = anchorIndices.length + 1;
+  const pos = (rank - 1) / (outOf - 1);
+  let band: Band = pos <= 1 / 3 ? "green" : pos <= 2 / 3 ? "amber" : "red";
+  if (band === "green" && popularity !== undefined && popularity < NICHE_POPULARITY) band = "amber";
+  return { band, rank, outOf };
+}
+
+/** 0 (best) … 1 (worst) position among anchors, for combining with city positions. */
+export function relativePosition(index: number, anchorIndices: number[]): number {
+  if (anchorIndices.length < MIN_ANCHORS) return 0.5 - Math.max(-0.5, Math.min(0.5, index));
+  const rank = 1 + anchorIndices.filter((a) => a > index).length;
+  return (rank - 1) / anchorIndices.length;
 }
 
 export function strongestBucket(profile: AgeProfile | undefined): { label: string; value: number } | null {

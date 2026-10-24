@@ -11,6 +11,6 @@ export async function POST(req: Request) {
   if (!allow(clientIp(req))) return tooMany();
   const parsed = BridgeBodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return badRequest(parsed.error);
-  const { script, audiences, rules, confirmed } = parsed.data;
-  return sseResponse((emit) => runCheck({ script, mode: "bridge", audiences: audiences.map(toAudience), rules, confirmed }, emit));
+  const { script, audiences, rules, confirmed, confirmedByText } = parsed.data;
+  return sseResponse((emit) => runCheck({ script, mode: "bridge", audiences: audiences.map(toAudience), rules, confirmed, confirmedByText }, emit));
 }

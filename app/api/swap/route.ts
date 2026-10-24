@@ -15,6 +15,8 @@ export async function POST(req: Request) {
     const result = await runSwap({ ...b, audiences: b.audiences.map(toAudience) });
     return Response.json(result);
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    const msg = err instanceof Error ? err.message : String(err);
+    const friendly = /timed out|longer than/i.test(msg) ? "Qloo was slow to answer. Try again: everything so far is cached, so it'll be quicker." : msg;
+    return Response.json({ error: friendly }, { status: 502 });
   }
 }

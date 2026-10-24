@@ -16,10 +16,10 @@ export async function POST(req: Request) {
   if (!allow(clientIp(req))) return tooMany();
   const parsed = TourBodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return badRequest(parsed.error);
-  const { script, cities, ageBand, rules, promo } = parsed.data;
+  const { script, cities, ageBand, rules, promo, confirmedByText } = parsed.data;
   const audiences = cities.map((c) => makeAudience(ageBand, c));
   return sseResponse(async (emit) => {
-    await runCheck({ script, mode: "tour", audiences, rules }, emit);
+    await runCheck({ script, mode: "tour", audiences, rules, confirmedByText }, emit);
     if (promo) {
       // The promo's own check must not leak into the main script view: pass stage updates only.
       const stageOnly: typeof emit = (e) => {

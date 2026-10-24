@@ -1,6 +1,7 @@
 import type { Receipts } from "../evidence/record";
 import type { ResolvedEntity } from "../types";
 import { resolveReference } from "./resolve";
+import { QLOO_CONCURRENCY, mapLimit } from "../util/pool";
 
 /**
  * Anchor sets give every ranking a fixed yardstick. Without them, a script
@@ -35,12 +36,15 @@ const memo: Map<string, ResolvedEntity[]> = (g.__anchors ??= new Map());
 export async function anchorsFor(type: string, receipts?: Receipts): Promise<ResolvedEntity[]> {
   const hit = memo.get(type);
   if (hit) return hit;
-  const out: ResolvedEntity[] = [];
-  for (const name of ANCHOR_NAMES[type] ?? []) {
-    if (out.length >= ANCHORS_PER_QUERY) break;
-    const r = await resolveReference(name, type, `Resolve anchor "${name}" so rankings share a fixed yardstick`, receipts);
-    if (r.status === "resolved" && r.entity && r.entity.type === type) out.push(r.entity);
-  }
+  const names = ANCHOR_NAMES[type] ?? [];
+  const results = await mapLimit(names, QLOO_CONCURRENCY, (name) =>
+    resolveReference(name, type, `Resolve anchor "${name}" so rankings share a fixed yardstick`, receipts).catch(() => null),
+  );
+  // Keep list order (stable yardstick), first ANCHORS_PER_QUERY that resolve cleanly.
+  const out = results
+    .map((r) => (r && r.status === "resolved" && r.entity && r.entity.type === type ? r.entity : null))
+    .filter((e): e is ResolvedEntity => e !== null)
+    .slice(0, ANCHORS_PER_QUERY);
   memo.set(type, out);
   return out;
 }
