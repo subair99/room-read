@@ -13,7 +13,7 @@ describe("Qloo envelope", () => {
     expect(QlooEnvelopeSchema.safeParse({ status: "weird" }).success).toBe(false);
   });
   it("reads entity ids from either id field", () => {
-    expect(entityFrom({ id: "a", name: "A", type: "urn:entity:movie" })?.entityId).toBe("a");
+    expect(entityFrom({ id: "a", name: "A", type: "urn:entity:movie" })).toEqual({ entityId: "a", name: "A", type: "movie" });
     expect(entityFrom({ name: "no id" })).toBeNull();
   });
 });

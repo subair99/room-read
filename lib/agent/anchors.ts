@@ -8,30 +8,37 @@ import { resolveReference } from "./resolve";
  * bottom of four). With anchors, a reference is green only if it ranks in the
  * top third of [script references + anchors] for that audience.
  *
- * Anchors deliberately span eras and audiences so the list itself isn't
- * biased toward one age band.
- * TODO(spike): replace names that don't resolve cleanly; keep 8–12 per type.
+ * qloo_rank takes at most 10 options, so each ranking uses ANCHORS_PER_QUERY
+ * anchors plus up to REFS_PER_QUERY script references. The SAME anchors are
+ * used in every query for a type, so positions stay comparable.
+ * Anchors span eras and audiences so the yardstick isn't tilted toward one age.
+ * TODO(spike): swap out any name that doesn't resolve cleanly.
  */
+export const ANCHORS_PER_QUERY = 6;
+export const REFS_PER_QUERY = 4;
+
 export const ANCHOR_NAMES: Record<string, string[]> = {
-  "urn:entity:tv_show": ["The Office", "Friends", "Stranger Things", "Grey's Anatomy", "The Simpsons", "Squid Game", "Breaking Bad", "Wheel of Fortune", "Euphoria", "Golden Girls"],
-  "urn:entity:movie": ["Titanic", "The Godfather", "Barbie", "Black Panther", "Home Alone", "Top Gun", "Frozen", "Pulp Fiction", "Mean Girls", "Jaws"],
-  "urn:entity:artist": ["Beyoncé", "Taylor Swift", "Drake", "The Beatles", "Bad Bunny", "Dolly Parton", "Burna Boy", "Michael Jackson", "Billie Eilish", "Elvis Presley"],
-  "urn:entity:brand": ["Nike", "Coca-Cola", "Apple", "Walmart", "Supreme", "Starbucks", "Sephora", "Ford", "Target", "Patagonia"],
-  "urn:entity:book": ["Harry Potter", "To Kill a Mockingbird", "The Hunger Games", "Atomic Habits", "The Great Gatsby", "Twilight", "1984", "The Da Vinci Code"],
-  "urn:entity:videogame": ["Minecraft", "Fortnite", "Super Mario Bros.", "Pac-Man", "Call of Duty", "The Sims", "Tetris", "Roblox"],
+  tv_show: ["Friends", "Stranger Things", "The Simpsons", "Squid Game", "Wheel of Fortune", "Euphoria", "Grey's Anatomy", "The Golden Girls"],
+  movie: ["Titanic", "Barbie", "The Godfather", "Black Panther", "Home Alone", "Frozen", "Top Gun", "Mean Girls"],
+  artist: ["Beyoncé", "Taylor Swift", "The Beatles", "Bad Bunny", "Dolly Parton", "Drake", "Michael Jackson", "Billie Eilish"],
+  brand: ["Nike", "Coca-Cola", "Apple", "Walmart", "Supreme", "Starbucks", "Ford", "Patagonia"],
+  book: ["Harry Potter and the Sorcerer's Stone", "To Kill a Mockingbird", "The Hunger Games", "Atomic Habits", "The Great Gatsby", "Twilight", "1984", "The Da Vinci Code"],
+  videogame: ["Minecraft", "Fortnite", "Super Mario Bros.", "Pac-Man", "Call of Duty", "The Sims", "Tetris", "Roblox"],
+  podcast: ["The Joe Rogan Experience", "Call Her Daddy", "Serial", "The Daily", "Crime Junkie", "SmartLess", "Armchair Expert", "This American Life"],
+  person: ["Oprah Winfrey", "Elon Musk", "Kim Kardashian", "Barack Obama", "MrBeast", "Serena Williams", "Tom Hanks", "Rihanna"],
 };
 
 const g = globalThis as unknown as { __anchors?: Map<string, ResolvedEntity[]> };
 const memo: Map<string, ResolvedEntity[]> = (g.__anchors ??= new Map());
 
-/** Resolve (and memoize) the anchor set for an entity type. */
+/** Resolve (and memoize) the first ANCHORS_PER_QUERY anchors that resolve for a type. */
 export async function anchorsFor(type: string, receipts?: Receipts): Promise<ResolvedEntity[]> {
   const hit = memo.get(type);
   if (hit) return hit;
-  const names = ANCHOR_NAMES[type] ?? [];
   const out: ResolvedEntity[] = [];
-  for (const name of names) {
-    const r = await resolveReference(name, type, `Resolve anchor "${name}" so rankings have a fixed yardstick`, receipts);
+  for (const name of ANCHOR_NAMES[type] ?? []) {
+    if (out.length >= ANCHORS_PER_QUERY) break;
+    const r = await resolveReference(name, type, `Resolve anchor "${name}" so rankings share a fixed yardstick`, receipts);
     if (r.status === "resolved" && r.entity && r.entity.type === type) out.push(r.entity);
   }
   memo.set(type, out);

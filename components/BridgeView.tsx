@@ -19,7 +19,11 @@ export function BridgeView({ verdicts, audiences }: { verdicts: ReferenceVerdict
             <tr key={v.reference.id}>
               <td>{v.reference.text}</td>
               {v.scores.map((s) => (
-                <td key={s.audience}><span className={`band-${s.band} px-1`}>{s.rank === null ? "—" : `${s.rank}/${s.outOf}`}</span></td>
+                <td key={s.audience}>
+                  <span className={`band-${s.band} px-1`}>
+                    {typeof s.ageIndex === "number" ? `${s.ageIndex >= 0 ? "+" : ""}${s.ageIndex.toFixed(2)}` : s.rank === null ? "—" : `${s.rank}/${s.outOf}`}
+                  </span>
+                </td>
               ))}
               <td><span className={`band-${v.band} px-1 font-semibold`}>{v.band}</span></td>
             </tr>

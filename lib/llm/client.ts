@@ -1,7 +1,8 @@
 import type { z } from "zod";
 
 /**
- * Minimal LLM client: Anthropic (Claude) or Azure OpenAI, chosen by LLM_PROVIDER.
+ * Minimal LLM client: Anthropic (Claude), Azure OpenAI, or any OpenAI-compatible
+ * API such as Qwen, chosen by LLM_PROVIDER.
  * The LLM only does language work (extracting references, rewriting lines).
  * It never decides whether a reference lands — Qloo ranks do that.
  */
@@ -14,7 +15,9 @@ export interface LlmCall {
 
 export async function completeText(call: LlmCall): Promise<string> {
   const provider = (process.env.LLM_PROVIDER || "anthropic").toLowerCase();
-  return provider === "azure" ? azure(call) : anthropic(call);
+  if (provider === "azure") return azure(call);
+  if (provider === "openai-compatible") return openaiCompatible(call);
+  return anthropic(call);
 }
 
 /** Ask for JSON and validate it. Retries once with the validation error. */
@@ -86,6 +89,30 @@ async function azure({ system, user, maxTokens = 1500, temperature = 0.2 }: LlmC
     }),
   });
   if (!res.ok) throw new Error(`Azure OpenAI ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+  return data.choices[0]?.message.content ?? "";
+}
+
+/** Any OpenAI-compatible API: Qwen (DashScope), OpenRouter, Together, Nebius… */
+async function openaiCompatible({ system, user, maxTokens = 1500, temperature = 0.2 }: LlmCall): Promise<string> {
+  const base = process.env.LLM_BASE_URL;
+  const key = process.env.LLM_API_KEY;
+  const model = process.env.LLM_MODEL;
+  if (!base || !key || !model) throw new Error("LLM_BASE_URL, LLM_API_KEY and LLM_MODEL must be set");
+  const res = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`LLM API ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = (await res.json()) as { choices: Array<{ message: { content: string } }> };
   return data.choices[0]?.message.content ?? "";
 }

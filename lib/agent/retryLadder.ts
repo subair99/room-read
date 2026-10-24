@@ -13,9 +13,13 @@ import type { ResolvedEntity, SwapAttempt, SwapResult } from "../types";
 export const MAX_ATTEMPTS = 3;
 
 export interface Comparison {
-  /** Percentile positions from ONE ranking query; 0 best, 1 worst */
+  /** Scores where LOWER is better (rank position, or −age index), worst case across audiences */
   candidate: number | null;
   original: number | null;
+  /** Human-readable evidence for the receipts and the swap card */
+  detail?: string;
+  /** False when the candidate is better but still doesn't land (e.g. still red). */
+  acceptable?: boolean;
 }
 
 export interface LadderDeps {
@@ -36,13 +40,18 @@ export async function runLadder(
   for (const candidate of deps.candidates) {
     if (attempts.length >= MAX_ATTEMPTS - 1) break; // keep one slot for restructure
     const cmp = await deps.compare(candidate);
+    const why = cmp.detail ? ` ${cmp.detail}` : "";
     if (cmp.candidate === null) {
-      attempts.push({ step: "next_equivalent", candidate, newPosition: null, accepted: false, note: `Not enough Qloo signal for "${candidate.name}".` });
+      attempts.push({ step: "next_equivalent", candidate, newPosition: null, accepted: false, note: cmp.detail ?? `Not enough Qloo signal for "${candidate.name}".` });
       continue;
     }
     const baseline = cmp.original ?? 1;
     if (cmp.candidate >= baseline) {
-      attempts.push({ step: "next_equivalent", candidate, newPosition: cmp.candidate, accepted: false, note: `"${candidate.name}" doesn't rank higher than the original for this audience.` });
+      attempts.push({ step: "next_equivalent", candidate, newPosition: cmp.candidate, accepted: false, note: `"${candidate.name}" doesn't score higher than the original for this audience.${why}` });
+      continue;
+    }
+    if (cmp.acceptable === false) {
+      attempts.push({ step: "next_equivalent", candidate, newPosition: cmp.candidate, accepted: false, note: `"${candidate.name}" is better but still doesn't land for this audience.${why}` });
       continue;
     }
     const line = await deps.rewrite(candidate);
@@ -50,7 +59,7 @@ export async function runLadder(
       attempts.push({ step: "next_equivalent", candidate, rewrittenLine: line, newPosition: cmp.candidate, accepted: false, note: "Rewrite dropped the new reference; rejected." });
       continue;
     }
-    const ok: SwapAttempt = { step: "next_equivalent", candidate, rewrittenLine: line, newPosition: cmp.candidate, accepted: true, note: `"${candidate.name}" ranks higher than the original for this audience.` };
+    const ok: SwapAttempt = { step: "next_equivalent", candidate, rewrittenLine: line, newPosition: cmp.candidate, accepted: true, note: `"${candidate.name}" scores higher than the original for this audience.${why}` };
     attempts.push(ok);
     return { referenceId, originalLine, originalPosition, attempts, accepted: ok, flagged: false, reason: ok.note };
   }

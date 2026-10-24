@@ -1,21 +1,24 @@
-import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { QlooEnvelope } from "./schemas";
 
 /**
  * SQLite cache keyed on tool + inputs. Protects the event quota and makes
  * judge mode instant. Only "ok" and "empty" results are cached.
+ *
+ * Uses Node's built-in SQLite (node:sqlite, Node 22.13+), so there is no
+ * native module to compile on any machine or host.
  */
-const g = globalThis as unknown as { __qlooCache?: Database.Database };
+const g = globalThis as unknown as { __qlooCache?: DatabaseSync };
 
-function db(): Database.Database {
+function db(): DatabaseSync {
   if (g.__qlooCache) return g.__qlooCache;
   const path = process.env.CACHE_PATH || "data/cache.db";
   mkdirSync(dirname(path), { recursive: true });
-  const d = new Database(path);
-  d.pragma("journal_mode = WAL");
+  const d = new DatabaseSync(path);
+  d.exec("PRAGMA journal_mode = WAL");
   d.exec(`CREATE TABLE IF NOT EXISTS qloo_cache (
     key TEXT PRIMARY KEY,
     tool TEXT NOT NULL,
@@ -37,7 +40,7 @@ export function cacheGet(tool: string, args: unknown): QlooEnvelope | null {
     .prepare("SELECT body, created_at FROM qloo_cache WHERE key = ?")
     .get(cacheKey(tool, args)) as { body: string; created_at: number } | undefined;
   if (!row) return null;
-  if (Date.now() - row.created_at > ttlMs()) return null;
+  if (Date.now() - Number(row.created_at) > ttlMs()) return null;
   return JSON.parse(row.body) as QlooEnvelope;
 }
 

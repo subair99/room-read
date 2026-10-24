@@ -14,7 +14,6 @@ export function SwapCard({ result, onAccept }: { result: SwapResult; onAccept: (
             <div className="text-xs text-[var(--muted)]">
               {i + 1}. {STEP_LABEL[a.step]}
               {a.candidate ? ` · ${a.candidate.name}` : ""}
-              {typeof a.newPosition === "number" ? ` · top ${Math.round((1 - a.newPosition) * 100)}%` : ""}
             </div>
             {a.rewrittenLine && <div className="mt-1">{a.rewrittenLine}</div>}
             <div className="mt-1 text-xs">{a.note}</div>

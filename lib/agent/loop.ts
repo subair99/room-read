@@ -1,8 +1,11 @@
+import { makeAudience } from "../audience";
 import { Receipts } from "../evidence/record";
+import { ageProfileFrom } from "../qloo/schemas";
 import { audienceDemographics } from "../qloo/tools";
 import type {
   Audience,
   AudienceScore,
+  Band,
   CheckRequest,
   CheckResult,
   Emit,
@@ -13,12 +16,13 @@ import type {
   SwapResult,
   UserRules,
 } from "../types";
+import { type AgeProfile, NICHE_POPULARITY, ageIndex, bandFromIndex, describeIndex, strongestBucket } from "./ageAffinity";
 import { bandFromRank, position, worseBand } from "./bands";
 import { extractReferences } from "./extract";
-import { rankForAudience, rankPair, trendsFor } from "./rank";
+import { type RankEntry, rankForAudience, rankPair, trendsFor } from "./rank";
 import { resolveReference, typeForKind } from "./resolve";
 import { restructureLine, rewriteLine } from "./rewrite";
-import { runLadder } from "./retryLadder";
+import { type Comparison, runLadder } from "./retryLadder";
 import { findEquivalents } from "./swap";
 import { scriptVerdict } from "./verdict";
 
@@ -26,8 +30,11 @@ import { scriptVerdict } from "./verdict";
  * The RoomRead loop. The LLM handles language; Qloo makes every judgment;
  * this code enforces the order and the scoring rules.
  *
- *   extract → resolve (ask on ambiguity) → rank per audience (with anchors)
- *   → trends → band (Bridge/Tour: worse audience) → verdict
+ *   extract → resolve (ask on real ambiguity)
+ *   → AGE signal:  qloo_audience_demographics index for the band (every entity)
+ *   → CITY signal: qloo_rank with signal_location, against anchors
+ *   → band per audience = worse of its signals; Bridge/Tour = worse audience
+ *   → trends → verdict
  */
 export async function runCheck(req: CheckRequest, emit: Emit = () => {}, receipts = new Receipts()): Promise<CheckResult> {
   const rules = req.rules ?? {};
@@ -43,7 +50,7 @@ export async function runCheck(req: CheckRequest, emit: Emit = () => {}, receipt
     const confirmed = req.confirmed?.[ref.id];
     if (confirmed) {
       resolutions.set(ref.id, { status: "resolved", entity: confirmed });
-      receipts.add({ source: "user_rule", reason: `You confirmed "${ref.text}" = ${confirmed.name}` });
+      receipts.add({ source: "user_rule", reason: `You confirmed "${ref.text}" = ${confirmed.name}${confirmed.year ? ` (${confirmed.year})` : ""}` });
       continue;
     }
     const outcome = await resolveReference(ref.text, typeForKind(ref.kind), `Resolve "${ref.text}" to one Qloo entity`, receipts);
@@ -53,15 +60,16 @@ export async function runCheck(req: CheckRequest, emit: Emit = () => {}, receipt
     }
   }
 
-  const resolved = refs
-    .map((r) => ({ ref: r, entity: resolutions.get(r.id)?.entity }))
-    .filter((x): x is { ref: Reference; entity: ResolvedEntity } => Boolean(x.entity));
-  const entities = dedupe(resolved.map((x) => x.entity));
+  const entities = dedupe(refs.map((r) => resolutions.get(r.id)?.entity).filter((e): e is ResolvedEntity => Boolean(e)));
 
-  const ranks = new Map<string, Map<string, { rank: number | null; outOf: number }>>();
-  for (const audience of req.audiences) {
-    emit({ type: "stage", stage: "rank", detail: `Ranking for ${audience.label}` });
-    ranks.set(audience.label, await rankForAudience(entities, audience, receipts));
+  const needAge = req.audiences.some((a) => a.ageBand);
+  const profiles = needAge ? await ageProfiles(entities, receipts, emit) : new Map<string, AgeProfile>();
+
+  const cityRanks = new Map<string, Map<string, RankEntry>>();
+  for (const audience of req.audiences.filter((a) => a.city)) {
+    emit({ type: "stage", stage: "rank", detail: `Ranking in ${audience.city}` });
+    // City only: age is measured by the demographics index, so don't mix it in here.
+    cityRanks.set(audience.label, await rankForAudience(entities, makeAudience(undefined, audience.city), receipts));
   }
 
   emit({ type: "stage", stage: "trends", detail: "Checking what's rising or fading" });
@@ -71,15 +79,9 @@ export async function runCheck(req: CheckRequest, emit: Emit = () => {}, receipt
   for (const ref of refs) {
     const resolution = resolutions.get(ref.id)!;
     const entity = resolution.entity;
-    const scores: AudienceScore[] = req.audiences.map((a) => {
-      const entry = entity ? ranks.get(a.label)?.get(entity.entityId) : undefined;
-      const rank = entry?.rank ?? null;
-      const outOf = entry?.outOf ?? 0;
-      return { audience: a.label, rank, outOf, band: bandFromRank(rank, outOf), trend: entity ? trendMap.get(entity.entityId) ?? "unknown" : "unknown" };
-    });
+    const scores = req.audiences.map((a) => scoreFor(a, entity, profiles, cityRanks, trendMap));
     const band = worseBand(scores.map((s) => s.band));
-    let reason = reasonFor(ref, resolution, scores);
-    if (band === "red" && entity) reason += await whoItLandsWith(entity, receipts);
+    const reason = reasonFor(ref, resolution, scores, entity ? profiles.get(entity.entityId) : undefined, band);
     receipts.add({ source: "interpretation", reason: `Band for "${ref.text}": ${band}`, output: scores });
     const v: ReferenceVerdict = { reference: ref, resolution, scores, band, reason };
     verdicts.push(v);
@@ -92,6 +94,56 @@ export async function runCheck(req: CheckRequest, emit: Emit = () => {}, receipt
   return result;
 }
 
+function scoreFor(
+  a: Audience,
+  entity: ResolvedEntity | undefined,
+  profiles: Map<string, AgeProfile>,
+  cityRanks: Map<string, Map<string, RankEntry>>,
+  trendMap: Map<string, AudienceScore["trend"]>,
+): AudienceScore {
+  const trend = entity ? trendMap.get(entity.entityId) ?? "unknown" : "unknown";
+  if (!entity) return { audience: a.label, rank: null, outOf: 0, band: "unknown", trend };
+
+  const bands: Band[] = [];
+  let idx: number | null | undefined;
+  if (a.ageBand) {
+    idx = ageIndex(profiles.get(entity.entityId), a.ageBand);
+    bands.push(bandFromIndex(idx, entity.popularity));
+  }
+  const city = a.city ? cityRanks.get(a.label)?.get(entity.entityId) : undefined;
+  if (a.city) bands.push(bandFromRank(city?.rank ?? null, city?.outOf ?? 0));
+
+  return {
+    audience: a.label,
+    rank: city?.rank ?? null,
+    outOf: city?.outOf ?? 0,
+    ageIndex: idx,
+    cityAffinity: city?.affinity ?? null,
+    band: worseBand(bands),
+    trend,
+  };
+}
+
+/** One audience_demographics call per entity (entity-level data, reused across audiences). */
+async function ageProfiles(entities: ResolvedEntity[], receipts: Receipts, emit: Emit): Promise<Map<string, AgeProfile>> {
+  emit({ type: "stage", stage: "demographics", detail: "Reading who each reference over-indexes with" });
+  const out = new Map<string, AgeProfile>();
+  for (const e of entities) {
+    const p = await profileOf(e, receipts);
+    if (p) out.set(e.entityId, p);
+  }
+  return out;
+}
+
+async function profileOf(e: ResolvedEntity, receipts: Receipts): Promise<AgeProfile | undefined> {
+  try {
+    const env = await audienceDemographics(e.entityId, e.type, `Read which age groups over- or under-index for "${e.name}"`, receipts);
+    return ageProfileFrom(env.results[0]);
+  } catch {
+    return undefined;
+  }
+}
+
 export interface SwapRequest {
   script: string;
   reference: Reference;
@@ -102,8 +154,9 @@ export interface SwapRequest {
 }
 
 /**
- * Swap one reference using the retry ladder. With several audiences
- * (Bridge/Tour) the candidate must beat the original on the WORSE audience.
+ * Swap one reference using the retry ladder. A candidate must beat the
+ * original on EVERY audience's signals (we compare the worst case), and
+ * must be popular enough to be familiar.
  */
 export async function runSwap(req: SwapRequest, receipts = new Receipts()): Promise<SwapResult & { receipts: Receipts["records"] }> {
   const rules = req.rules ?? {};
@@ -112,22 +165,30 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
   const line = lines[req.reference.line] ?? "";
   const primary = req.audiences[0];
 
-  const candidates = await findEquivalents(req.entity, primary, rules, receipts);
+  const found = await findEquivalents(req.entity, primary, rules, receipts);
+  const originalProfile = req.audiences.some((a) => a.ageBand) ? await profileOf(req.entity, receipts) : undefined;
+
+  // Score every candidate once, then try them best-first so the first
+  // accepted swap is the strongest one, not just the first that's "less bad".
+  const memo = new Map<string, Comparison>();
+  const compare = async (candidate: ResolvedEntity): Promise<Comparison> => {
+    const hit = memo.get(candidate.entityId);
+    if (hit) return hit;
+    const c = await scoreCandidate(candidate);
+    memo.set(candidate.entityId, c);
+    return c;
+  };
+  for (const c of found) await compare(c);
+  const ordered = [...found].sort((a, b) => rankKey(memo.get(a.entityId)) - rankKey(memo.get(b.entityId)));
+  receipts.add({
+    source: "interpretation",
+    reason: `Scored ${found.length} candidate(s); trying the strongest first`,
+    output: ordered.map((c) => ({ name: c.name, worstScore: memo.get(c.entityId)?.candidate, lands: memo.get(c.entityId)?.acceptable })),
+  });
 
   const result = await runLadder(req.reference.id, line, req.originalPosition ?? null, {
-    candidates,
-    compare: async (candidate) => {
-      let worstCand: number | null = -1;
-      let worstOrig: number | null = -1;
-      for (const a of req.audiences) {
-        const pair = await rankPair(req.entity, candidate, a, receipts);
-        const c = position(pair.candidate.rank, pair.candidate.outOf);
-        const o = position(pair.original.rank, pair.original.outOf);
-        worstCand = c === null || worstCand === null ? null : Math.max(worstCand, c);
-        worstOrig = o === null || worstOrig === null ? null : Math.max(worstOrig, o);
-      }
-      return { candidate: worstCand, original: worstOrig };
-    },
+    candidates: ordered,
+    compare,
     rewrite: async (candidate) => {
       const text = await rewriteLine(line, req.reference.text, candidate.name, rules);
       receipts.add({ source: "llm", reason: `Rewrite the line with "${candidate.name}"`, output: text });
@@ -142,6 +203,59 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
 
   receipts.add({ source: "interpretation", reason: result.reason, output: result.attempts.map((a) => ({ step: a.step, accepted: a.accepted, note: a.note })) });
   return { ...result, receipts: receipts.records };
+
+  async function scoreCandidate(candidate: ResolvedEntity): Promise<Comparison> {
+    if (candidate.popularity !== undefined && candidate.popularity < NICHE_POPULARITY) {
+      return { candidate: null, original: null, detail: `"${candidate.name}" is too niche to be familiar (popularity ${candidate.popularity.toFixed(2)}).` };
+    }
+    // Scores are "badness" on one 0–1 scale (lower is better) so age and city
+    // signals can be combined: age index +0.5 → 0, −0.5 → 1; city position as-is.
+    let worstCand = -Infinity;
+    let worstOrig = -Infinity;
+    const details: string[] = [];
+    const bands: Band[] = [];
+    const candProfile = req.audiences.some((a) => a.ageBand) ? await profileOf(candidate, receipts) : undefined;
+    for (const a of req.audiences) {
+      if (a.ageBand) {
+        const c = ageIndex(candProfile, a.ageBand);
+        const o = ageIndex(originalProfile, a.ageBand);
+        if (c === null) return { candidate: null, original: null, detail: `No age data for "${candidate.name}".` };
+        worstCand = Math.max(worstCand, badness(c));
+        bands.push(bandFromIndex(c, candidate.popularity));
+        worstOrig = Math.max(worstOrig, o === null ? 1 : badness(o));
+        details.push(`${a.ageBand}: ${describeIndex(c)} vs original ${o === null ? "n/a" : describeIndex(o)}`);
+      }
+      if (a.city) {
+        const pair = await rankPair(req.entity, candidate, makeAudience(undefined, a.city), receipts);
+        const c = position(pair.candidate.rank, pair.candidate.outOf);
+        const o = position(pair.original.rank, pair.original.outOf);
+        if (c === null) {
+          // Qloo's city ranking often omits titles; don't let a missing signal block a swap.
+          details.push(`${a.city}: no city signal`);
+          if (!a.ageBand) return { candidate: null, original: null, detail: `No ${a.city} signal for "${candidate.name}".` };
+          continue;
+        }
+        worstCand = Math.max(worstCand, c);
+        bands.push(bandFromRank(pair.candidate.rank, pair.candidate.outOf));
+        worstOrig = Math.max(worstOrig, o ?? 1);
+        details.push(`${a.city}: ranks ${pair.candidate.rank}/${pair.candidate.outOf} vs original ${pair.original.rank ?? "—"}/${pair.original.outOf}`);
+      }
+    }
+    const worst = worseBand(bands);
+    if (worstCand === -Infinity) return { candidate: null, original: null, detail: details.join(" · ") || `No signal for "${candidate.name}".` };
+    return { candidate: worstCand, original: worstOrig, detail: `${details.join(" · ")} · lands as ${worst}`, acceptable: worst === "green" || worst === "amber" };
+  }
+}
+
+/** Age index → badness on 0–1 (lower is better), so it can be combined with city positions. */
+function badness(index: number): number {
+  return 0.5 - Math.max(-0.5, Math.min(0.5, index));
+}
+
+/** Sort key: acceptable first, then by worst-case score (lower is better), unscored last. */
+function rankKey(c: Comparison | undefined): number {
+  if (!c || c.candidate === null) return 1e9;
+  return (c.acceptable === false ? 1e6 : 0) + c.candidate;
 }
 
 /** Apply an accepted swap to the script text. */
@@ -151,25 +265,24 @@ export function applySwap(script: string, lineIndex: number, newLine: string): s
   return lines.join("\n");
 }
 
-function reasonFor(ref: Reference, res: ResolveOutcome, scores: AudienceScore[]): string {
+function reasonFor(ref: Reference, res: ResolveOutcome, scores: AudienceScore[], profile: AgeProfile | undefined, band: Band): string {
   if (res.status === "ambiguous") return `"${ref.text}" could mean several things. Pick one to score it.`;
   if (res.status === "not_found") return `Qloo doesn't have enough signal on "${ref.text}".`;
-  return scores
-    .map((s) => {
-      if (s.rank === null) return `${s.audience}: not enough signal`;
-      const trend = s.trend === "rising" ? ", rising" : s.trend === "fading" ? ", fading" : "";
-      return `${s.audience}: ranks ${s.rank} of ${s.outOf}${trend}`;
-    })
-    .join(" · ");
-}
-
-async function whoItLandsWith(entity: ResolvedEntity, receipts: Receipts): Promise<string> {
-  try {
-    const env = await audienceDemographics(entity.entityId, `Explain who "${entity.name}" does land with`, receipts);
-    return env.summary ? ` Qloo: ${env.summary.slice(0, 140)}` : "";
-  } catch {
-    return "";
+  const parts = scores.map((s) => {
+    const bits: string[] = [];
+    if (s.ageIndex !== undefined) bits.push(s.ageIndex === null ? "no age data" : describeIndex(s.ageIndex));
+    if (s.outOf > 0 || s.rank !== null) bits.push(s.rank === null ? "not in the city ranking" : `ranks ${s.rank} of ${s.outOf} locally`);
+    const trend = s.trend === "rising" ? ", rising" : s.trend === "fading" ? ", fading" : "";
+    return `${s.audience}: ${bits.join(", ") || "no signal"}${trend}`;
+  });
+  let reason = parts.join(" · ");
+  const pop = res.entity?.popularity;
+  if (pop !== undefined && pop < NICHE_POPULARITY) reason += ` · niche overall (popularity ${pop.toFixed(2)})`;
+  if (band === "red") {
+    const top = strongestBucket(profile);
+    if (top && top.value > 0) reason += ` · strongest with ${top.label} (${top.value >= 0 ? "+" : "−"}${Math.abs(top.value).toFixed(2)})`;
   }
+  return reason;
 }
 
 function logRules(rules: UserRules, receipts: Receipts) {

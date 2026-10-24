@@ -42,8 +42,8 @@ The LLM handles language. Qloo makes every judgment. Plain code enforces the ord
 
 ### Scoring rules
 
-1. **Rank, don't average.** Qloo scores are normalized per query, so RoomRead compares rank positions *within one query* and never mixes raw scores across queries.
-2. **Anchors.** Each ranking includes a fixed set of well-known titles from several eras, so "green" means "top third against a stable yardstick", not "best of the four references in this script".
+1. **Age: who over-indexes.** `qloo_audience_demographics` gives, for every title, how much each age bucket over- or under-indexes. RoomRead averages the buckets in the chosen band: ≥ +0.10 green, ≤ −0.15 red, otherwise amber. Titles with Qloo popularity below 0.5 can't be green (too niche to be familiar). Thresholds are RoomRead's interpretation, labelled as such.
+2. **City: rank within one query, against anchors.** `qloo_rank` with the city as `signal_location`, together with a fixed set of well-known titles, so positions are never mixed across queries. A reference Qloo doesn't return for that city shows as "not in the city ranking".
 3. **Bridge.** Choose the reference whose worse audience rank is best; ties go to the better average.
 4. **A swap must earn it.** A candidate is accepted only if it ranks higher than the original in the same query and the rewritten line actually contains it.
 5. **Label everything.** Qloo results, RoomRead's interpretation, your rules and AI-written text are shown separately in the receipts.
@@ -54,23 +54,24 @@ The LLM handles language. Qloo makes every judgment. Plain code enforces the ord
 | --- | --- |
 | `qloo_describe` | Resolve a reference ("that Seinfeld bit") to one entity; returns candidates when ambiguous |
 | `qloo_find_tags` | Map vibe words to real Qloo tags |
-| `qloo_rank` | Rank references plus anchors for an audience: the core score |
+| `qloo_audience_demographics` | Age score: which age groups over- or under-index for each reference |
+| `qloo_rank` | City score: rank references plus anchors with the city as the location |
 | `qloo_where_popular` | Place signal for Tour mode |
 | `qloo_trends` | Flag references that are rising or fading |
 | `qloo_entity_tags` | Capture what makes the original work (genre, era, mood) |
 | `qloo_recommend` | Find same-type equivalents this audience loves |
-| `qloo_audience_demographics` | Explain who a red reference *does* land with |
 
 A redacted request → result walkthrough is in [docs/request-to-result.md](docs/request-to-result.md).
 
 ## Run it
 
-Requirements: Node.js 22.19+, the Qloo event credential, and a Claude or Azure OpenAI key.
+Requirements: Node.js 22.19+ (no native modules to compile; the cache uses Node's built-in SQLite), the Qloo event credential, and a key for any OpenAI-compatible model (e.g. Qwen), Claude or Azure OpenAI.
 
 ```sh
 npm install --global @qloo/qloo-harness   # must be >= 0.1.26
+qloo config set base-url https://hackathon.api.qloo.com   # hackathon keys use this server
 qloo setup --qloo                          # enter the event credential
-qloo setup --status
+qloo doctor --network                      # should say "accepted the configured credential"
 
 git clone <this repo> && cd room-read
 cp .env.example .env.local                 # add your model key; never commit it
@@ -87,7 +88,12 @@ One always-on Docker container (Railway, Fly.io, Render paid tier or Azure Conta
 
 ```sh
 docker build -t roomread .
-docker run -p 3000:3000 -e QLOO_API_KEY=... -e ANTHROPIC_API_KEY=... roomread
+docker run -p 3000:3000 \
+  -e QLOO_API_KEY=... \
+  -e QLOO_BASE_URL=https://hackathon.api.qloo.com/ \
+  -e QLOO_TRUSTED_BASE_URL=https://hackathon.api.qloo.com/ \
+  -e LLM_PROVIDER=openai-compatible -e LLM_BASE_URL=... -e LLM_API_KEY=... -e LLM_MODEL=qwen-plus \
+  roomread
 ```
 
 ## Evaluation

@@ -1,22 +1,21 @@
 import { audienceSignals } from "../audience";
 import type { Receipts } from "../evidence/record";
-import { entityFrom } from "../qloo/schemas";
-import { rank, trends } from "../qloo/tools";
+import { affinityFrom, entityFrom, isInsightsType, trendSeriesFrom } from "../qloo/schemas";
+import { rank, trends, TRENDS_MAX_ENTITIES } from "../qloo/tools";
 import type { Audience, ResolvedEntity, Trend } from "../types";
-import { anchorsFor } from "./anchors";
+import { anchorsFor, REFS_PER_QUERY } from "./anchors";
 
 export interface RankEntry {
   rank: number | null;
   outOf: number;
+  affinity?: number;
 }
 
 /**
- * Rank entities for ONE audience. Entities are grouped by type and each group
- * is ranked in ONE query together with that type's anchor set.
+ * Rank entities for ONE audience. Entities are grouped by type; each query
+ * holds up to REFS_PER_QUERY script references plus the SAME anchor set for
+ * that type (qloo_rank takes at most 10 options).
  * Returns entityId → {rank, outOf} within its own query.
- *
- * TODO(spike): if qloo_rank rejects a city + age band together, rank by age
- * band here and add city strength from qloo_where_popular as a second signal.
  */
 export async function rankForAudience(
   entities: ResolvedEntity[],
@@ -24,31 +23,28 @@ export async function rankForAudience(
   receipts?: Receipts,
 ): Promise<Map<string, RankEntry>> {
   const out = new Map<string, RankEntry>();
-  const byType = new Map<string, ResolvedEntity[]>();
-  for (const e of entities) byType.set(e.type, [...(byType.get(e.type) ?? []), e]);
-
-  for (const [type, group] of byType) {
+  for (const [type, group] of groupByType(entities)) {
+    if (!isInsightsType(type)) continue; // e.g. "locality": nothing to rank
     const anchors = await anchorsFor(type, receipts);
-    const options = unique([...group.map((e) => e.entityId), ...anchors.map((a) => a.entityId)]);
-    const env = await rank(
-      { options, option_type: type, ...audienceSignals(audience) },
-      `Rank ${group.length} script reference(s) against ${anchors.length} anchors for ${audience.label}`,
-      receipts,
-    );
-    const ordered = env.results.map(entityFrom).filter((e) => e !== null).map((e) => e!.entityId);
-    const outOf = ordered.length;
-    for (const e of group) {
-      const idx = ordered.indexOf(e.entityId);
-      out.set(e.entityId, { rank: idx >= 0 ? idx + 1 : null, outOf });
+    for (let i = 0; i < group.length; i += REFS_PER_QUERY) {
+      const chunk = group.slice(i, i + REFS_PER_QUERY);
+      const options = unique([...chunk.map((e) => e.entityId), ...anchors.map((a) => a.entityId)]);
+      const env = await rank(
+        { options, option_type: type, ...audienceSignals(audience) },
+        `Rank ${chunk.length} script reference(s) against ${anchors.length} anchors for ${audience.label}`,
+        receipts,
+      );
+      const ordered = orderedIds(env.results);
+      for (const e of chunk) {
+        const idx = ordered.indexOf(e.entityId);
+        out.set(e.entityId, { rank: idx >= 0 ? idx + 1 : null, outOf: ordered.length, affinity: idx >= 0 ? affinityFrom(env.results[idx]) : undefined });
+      }
     }
   }
   return out;
 }
 
-/**
- * Compare a candidate with the original in ONE query for one audience.
- * Returns percentile positions (0 best) or null when Qloo has no signal.
- */
+/** Compare a candidate with the original in ONE query for one audience. */
 export async function rankPair(
   original: ResolvedEntity,
   candidate: ResolvedEntity,
@@ -56,13 +52,13 @@ export async function rankPair(
   receipts?: Receipts,
 ): Promise<{ original: RankEntry; candidate: RankEntry }> {
   const anchors = await anchorsFor(original.type, receipts);
-  const options = unique([original.entityId, candidate.entityId, ...anchors.map((a) => a.entityId)]);
+  const options = unique([original.entityId, candidate.entityId, ...anchors.map((a) => a.entityId)]).slice(0, 10);
   const env = await rank(
     { options, option_type: original.type, ...audienceSignals(audience) },
     `Check whether "${candidate.name}" ranks higher than "${original.name}" for ${audience.label}`,
     receipts,
   );
-  const ordered = env.results.map(entityFrom).filter((e) => e !== null).map((e) => e!.entityId);
+  const ordered = orderedIds(env.results);
   const at = (id: string): RankEntry => {
     const i = ordered.indexOf(id);
     return { rank: i >= 0 ? i + 1 : null, outOf: ordered.length };
@@ -71,32 +67,26 @@ export async function rankPair(
 }
 
 /**
- * Trend over the last 12 months, per entity (max 5 per call, same type).
- * TODO(spike): confirm the trends result shape; this reads a numeric
- * change field if present and otherwise returns "unknown".
+ * Trend over the last 12 months (max 5 entities per call, same type).
+ * Reads env.series: weekly population percentiles per entity. Compares the
+ * mean of the first and last 4 weeks.
  */
 export async function trendsFor(entities: ResolvedEntity[], receipts?: Receipts): Promise<Map<string, Trend>> {
   const out = new Map<string, Trend>();
   const end = new Date();
   const start = new Date(end);
   start.setFullYear(end.getFullYear() - 1);
-  const byType = new Map<string, ResolvedEntity[]>();
-  for (const e of entities) byType.set(e.type, [...(byType.get(e.type) ?? []), e]);
-
-  for (const [type, group] of byType) {
-    for (let i = 0; i < group.length; i += 5) {
-      const chunk = group.slice(i, i + 5);
+  for (const [type, group] of groupByType(entities)) {
+    if (!isInsightsType(type)) continue;
+    for (let i = 0; i < group.length; i += TRENDS_MAX_ENTITIES) {
+      const chunk = group.slice(i, i + TRENDS_MAX_ENTITIES);
       try {
         const env = await trends(
-          { entity_type: type, entities: chunk.map((e) => e.entityId), start_date: iso(start), end_date: iso(end) },
+          { entities: chunk.map((e) => e.entityId), entity_type: type, start_date: iso(start), end_date: iso(end) },
           "Flag references that are rising or fading over the last 12 months",
           receipts,
         );
-        for (const item of env.results) {
-          const e = entityFrom(item);
-          if (!e) continue;
-          out.set(e.entityId, trendFromItem(item));
-        }
+        for (const s of trendSeriesFrom(env)) out.set(s.entityId, trendFromSeries(s.percentiles.map((x) => x.p)));
       } catch {
         // Trends are a nice-to-have; never fail a check over them.
       }
@@ -105,14 +95,25 @@ export async function trendsFor(entities: ResolvedEntity[], receipts?: Receipts)
   return out;
 }
 
-export function trendFromItem(item: unknown): Trend {
-  if (!item || typeof item !== "object") return "unknown";
-  const o = item as Record<string, unknown>;
-  const v = [o.change, o.delta, o.trend_change, o.percent_change].find((x) => typeof x === "number") as number | undefined;
-  if (v === undefined) return "unknown";
-  if (v > 0.05) return "rising";
-  if (v < -0.05) return "fading";
+/** Oldest → newest percentiles. Rising/fading if the 4-week mean moved by more than 0.02. */
+export function trendFromSeries(oldestFirst: number[]): Trend {
+  if (oldestFirst.length < 2) return "unknown";
+  const n = Math.min(4, Math.floor(oldestFirst.length / 2) || 1);
+  const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const delta = mean(oldestFirst.slice(-n)) - mean(oldestFirst.slice(0, n));
+  if (delta > 0.02) return "rising";
+  if (delta < -0.02) return "fading";
   return "steady";
+}
+
+function orderedIds(results: unknown[]): string[] {
+  return results.map(entityFrom).filter((e) => e !== null).map((e) => e!.entityId);
+}
+
+function groupByType(entities: ResolvedEntity[]): Map<string, ResolvedEntity[]> {
+  const m = new Map<string, ResolvedEntity[]>();
+  for (const e of entities) m.set(e.type, [...(m.get(e.type) ?? []), e]);
+  return m;
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);

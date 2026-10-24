@@ -41,8 +41,12 @@ export interface Reference {
 export interface ResolvedEntity {
   entityId: string;
   name: string;
-  /** Qloo entity type, e.g. "urn:entity:tv_show" */
+  /** Qloo entity type as the harness uses it, e.g. "tv_show" */
   type: string;
+  /** Helps the user tell same-name candidates apart */
+  year?: number;
+  popularity?: number;
+  description?: string;
 }
 
 export type ResolveStatus = "resolved" | "ambiguous" | "not_found";
@@ -51,14 +55,21 @@ export interface ResolveOutcome {
   status: ResolveStatus;
   entity?: ResolvedEntity;
   candidates?: ResolvedEntity[];
+  /** Set when RoomRead picked the clearly most popular of several matches; the user can switch */
+  alternatives?: ResolvedEntity[];
+  note?: string;
 }
 
 export interface AudienceScore {
   audience: string;
-  /** 1-based position in the ranked list, or null if Qloo returned nothing */
+  /** City signal: 1-based position in the city ranking, or null if Qloo didn't return it */
   rank: number | null;
-  /** Size of the ranked list (script references + anchors) */
+  /** Size of the city ranking (script references + anchors) */
   outOf: number;
+  /** Age signal: mean audience_demographics index for the age band (+ over-indexes, − under) */
+  ageIndex?: number | null;
+  /** City signal: Qloo affinity from the city ranking, when returned */
+  cityAffinity?: number | null;
   band: Band;
   trend: Trend;
 }

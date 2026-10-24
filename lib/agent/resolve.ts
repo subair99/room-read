@@ -1,19 +1,20 @@
 import type { Receipts } from "../evidence/record";
-import { entityFrom } from "../qloo/schemas";
+import { candidatesFrom, entityFrom, interpretedType } from "../qloo/schemas";
 import { describe } from "../qloo/tools";
 import type { ResolveOutcome, ResolvedEntity } from "../types";
 
+/** LLM "kind" → harness entity type. */
 const KIND_TO_TYPE: Record<string, string> = {
-  tv_show: "urn:entity:tv_show",
-  movie: "urn:entity:movie",
-  artist: "urn:entity:artist",
-  song: "urn:entity:artist", // TODO(spike): Qloo may not index songs; fall back to artist
-  book: "urn:entity:book",
-  brand: "urn:entity:brand",
-  person: "urn:entity:person",
-  place: "urn:entity:place",
-  game: "urn:entity:videogame",
-  podcast: "urn:entity:podcast",
+  tv_show: "tv_show",
+  movie: "movie",
+  artist: "artist",
+  song: "artist", // Qloo indexes artists, not songs
+  book: "book",
+  brand: "brand",
+  person: "person",
+  place: "place",
+  game: "videogame",
+  podcast: "podcast",
 };
 
 export function typeForKind(kind: string): string | undefined {
@@ -21,30 +22,39 @@ export function typeForKind(kind: string): string | undefined {
 }
 
 /**
- * Resolve a reference to ONE Qloo entity. Never force a fuzzy match:
- * needs_input → return candidates so the user can choose.
+ * When several same-name entities match, RoomRead picks the top one only if
+ * it is clearly more popular than the next (DOMINANCE ×), and shows the
+ * others so the user can switch. Otherwise it asks. Never a silent guess.
  */
+export const DOMINANCE = 1.5;
+
 export async function resolveReference(
   text: string,
   typeHint: string | undefined,
   reason: string,
   receipts?: Receipts,
 ): Promise<ResolveOutcome> {
-  const env = await describe(text, reason, receipts);
-  const entities = env.results.map(entityFrom).filter((e): e is ResolvedEntity => e !== null);
+  const env = await describe(text, typeHint, reason, receipts);
 
   if (env.status === "needs_input") {
-    return { status: "ambiguous", candidates: entities.slice(0, 5) };
+    const candidates = candidatesFrom(env).map((c) => withType(c, typeHint)).slice(0, 5);
+    if (!candidates.length) return { status: "not_found" };
+    const sorted = [...candidates].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
+    const [top, next] = sorted;
+    if (top.popularity !== undefined && (next?.popularity ?? 0) * DOMINANCE <= top.popularity) {
+      const note = `Picked "${top.name}"${top.year ? ` (${top.year})` : ""}, the clearly most popular of ${sorted.length} matches. You can switch.`;
+      receipts?.add({ source: "interpretation", reason: note, output: sorted.map((c) => ({ name: c.name, year: c.year, popularity: c.popularity })) });
+      return { status: "resolved", entity: top, alternatives: sorted.slice(1), note };
+    }
+    return { status: "ambiguous", candidates: sorted };
   }
-  if (env.status === "empty" || entities.length === 0) return { status: "not_found" };
 
-  // Prefer an exact-name match of the hinted type; otherwise the top result.
-  const exact = entities.find(
-    (e) => e.name.toLowerCase() === text.toLowerCase() && (!typeHint || e.type === typeHint),
-  );
-  const pick = exact ?? entities[0];
-  // If the top two are both exact names of different types, ask instead of guessing.
-  const sameName = entities.filter((e) => e.name.toLowerCase() === text.toLowerCase());
-  if (!exact && sameName.length > 1) return { status: "ambiguous", candidates: sameName.slice(0, 5) };
-  return { status: "resolved", entity: pick };
+  const entities = env.results.map(entityFrom).filter((e): e is ResolvedEntity => e !== null);
+  if (env.status === "empty" || entities.length === 0) return { status: "not_found" };
+  const type = interpretedType(env) ?? typeHint;
+  return { status: "resolved", entity: withType(entities[0], type) };
+}
+
+function withType(e: ResolvedEntity, type: string | undefined): ResolvedEntity {
+  return e.type === "unknown" && type ? { ...e, type } : e;
 }

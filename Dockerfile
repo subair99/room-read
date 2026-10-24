@@ -3,9 +3,8 @@
 # by the Qloo harness.
 FROM node:22-bookworm-slim
 
-# Build tools for better-sqlite3 if no prebuilt binary matches.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 # Qloo harness (must be >= 0.1.26).
