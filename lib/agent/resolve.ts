@@ -34,6 +34,20 @@ export async function resolveReference(
   reason: string,
   receipts?: Receipts,
 ): Promise<ResolveOutcome> {
+  const first = await resolveOnce(text, typeHint, reason, receipts);
+  // The LLM's type guess can be wrong (e.g. "brand" for a website). Retry once without it.
+  if (first.status === "not_found" && typeHint) {
+    return resolveOnce(text, undefined, `${reason} (retry without the "${typeHint}" type guess)`, receipts);
+  }
+  return first;
+}
+
+async function resolveOnce(
+  text: string,
+  typeHint: string | undefined,
+  reason: string,
+  receipts?: Receipts,
+): Promise<ResolveOutcome> {
   const env = await describe(text, typeHint, reason, receipts);
 
   if (env.status === "needs_input") {
