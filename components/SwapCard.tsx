@@ -1,12 +1,12 @@
 import type { SwapResult } from "@/lib/types";
 
-const STEP_LABEL = { next_equivalent: "Equivalent", restructure: "Restructure", flag: "Flagged" } as const;
+const STEP_LABEL = { next_equivalent: "Candidate", restructure: "Without a reference", flag: "Result" } as const;
 
-/** Shows every rung of the retry ladder, not just the winner. */
-export function SwapCard({ result, onAccept }: { result: SwapResult; onAccept: (line: string) => void }) {
+/** Statistics only: every rung of the retry ladder and the evidence behind it. Actions live in Proposed changes. */
+export function SwapCard({ result }: { result: SwapResult }) {
   return (
     <div className="panel flex flex-col gap-2 p-4 text-sm">
-      <h3 className="font-semibold">Swap attempts</h3>
+      <h3 className="font-semibold">Swap statistics</h3>
       <p className="text-[var(--muted)]">Original: {result.originalLine}</p>
       {result.summary && <p className="text-xs text-[var(--muted)]">{result.summary}</p>}
       <ol className="flex flex-col gap-2">
@@ -15,26 +15,14 @@ export function SwapCard({ result, onAccept }: { result: SwapResult; onAccept: (
             <div className="text-xs text-[var(--muted)]">
               {i + 1}. {STEP_LABEL[a.step]}
               {a.candidate ? ` · ${a.candidate.name}` : ""}
+              {a.accepted ? " · proposed" : ""}
             </div>
             {a.rewrittenLine && <div className="mt-1">{a.rewrittenLine}</div>}
             <div className="mt-1 text-xs">{a.note}</div>
           </li>
         ))}
       </ol>
-      {result.accepted?.rewrittenLine && (
-        <button onClick={() => onAccept(result.accepted!.rewrittenLine!)} className="self-start rounded-lg bg-[var(--green)] px-3 py-1.5 font-semibold text-white">
-          Accept swap
-        </button>
-      )}
-      {result.flagged && <p className="font-semibold text-[var(--amber)]">{result.reason}</p>}
-      {result.flagged && result.attempts.find((a) => a.step === "restructure" && a.rewrittenLine) && (
-        <button
-          onClick={() => onAccept(result.attempts.find((a) => a.step === "restructure")!.rewrittenLine!)}
-          className="self-start rounded-lg border border-[var(--line)] px-3 py-1.5 text-sm"
-        >
-          Drop the reference instead
-        </button>
-      )}
+      <p className="text-xs text-[var(--muted)]">Apply or skip this in Proposed changes.</p>
     </div>
   );
 }

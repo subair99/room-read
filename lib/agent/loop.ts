@@ -271,6 +271,7 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
     let worstOrig = -Infinity;
     const details: string[] = [];
     const bands: Band[] = [];
+    const origBands: Band[] = [];
     const candProfile = req.audiences.some((a) => a.ageBand) ? await profileOf(candidate, receipts) : undefined;
     for (const a of req.audiences) {
       if (a.ageBand) {
@@ -281,6 +282,7 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
         const rel = relativeAgeBand(c, ys, candidate.popularity);
         worstCand = Math.max(worstCand, relativePosition(c, ys));
         bands.push(rel.band);
+        origBands.push(relativeAgeBand(o, ys, req.entity.popularity).band);
         worstOrig = Math.max(worstOrig, o === null ? 1 : relativePosition(o, ys));
         details.push(`${a.ageBand}: ${describeIndex(c)}${rel.rank ? `, ${rel.rank}/${rel.outOf} vs well-known titles` : ""} (original ${o === null ? "n/a" : describeIndex(o)})`);
       }
@@ -296,13 +298,17 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
         }
         worstCand = Math.max(worstCand, c);
         bands.push(bandFromRank(pair.candidate.rank, pair.candidate.outOf));
+        origBands.push(bandFromRank(pair.original.rank, pair.original.outOf));
         worstOrig = Math.max(worstOrig, o ?? 1);
         details.push(`${a.city}: ranks ${pair.candidate.rank}/${pair.candidate.outOf} vs original ${pair.original.rank ?? "—"}/${pair.original.outOf}`);
       }
     }
     const worst = worseBand(bands);
     if (worstCand === -Infinity) return { candidate: null, original: null, detail: details.join(" · ") || `No signal for "${candidate.name}".` };
-    return { candidate: worstCand, original: worstOrig, detail: `${details.join(" · ")} · lands as ${worst}`, acceptable: worst === "green" || worst === "amber" };
+    const origWorst = worseBand(origBands);
+    // A swap must IMPROVE the band: amber → green only; red → amber or green.
+    const acceptable = BAND_ORDER[worst] < BAND_ORDER[origWorst === "unknown" ? "red" : origWorst] && worst !== "red" && worst !== "unknown";
+    return { candidate: worstCand, original: worstOrig, detail: `${details.join(" · ")} · lands as ${worst} (original ${origWorst})`, acceptable };
   }
 }
 
@@ -372,3 +378,5 @@ function interleave(lists: ResolvedEntity[][]): ResolvedEntity[] {
   }
   return out;
 }
+
+const BAND_ORDER: Record<Band, number> = { green: 0, amber: 1, red: 2, unknown: 3 };

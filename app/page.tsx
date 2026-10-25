@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AudienceBar, type AudienceState } from "@/components/AudienceBar";
+import { BatchSwapPanel, type BatchAccept, type BatchItem } from "@/components/BatchSwapPanel";
 import { BridgeView } from "@/components/BridgeView";
 import { EvidencePanel } from "@/components/EvidencePanel";
 import { JudgeModePicker, type JudgeScript } from "@/components/JudgeModePicker";
@@ -44,6 +45,10 @@ export default function Home() {
   const [editing, setEditing] = useState(true);
   const [promoReq, setPromoReq] = useState<{ show: string; city: string } | undefined>();
   const [promo, setPromo] = useState<PromoSummary | null>(null);
+  const [batch, setBatch] = useState<{ items: BatchItem[]; skipped: Array<{ text: string; reason: string }> } | null>(null);
+  const [includeAmber, setIncludeAmber] = useState(false);
+  const [searchingId, setSearchingId] = useState<string | null>(null);
+  const [batchBusy, setBatchBusy] = useState(false);
 
   const audiences = useMemo(() => {
     if (aud.mode === "bridge") return [{ ageBand: aud.ageBand, city: aud.city || undefined }, { ageBand: aud.ageBandB, city: aud.cityB || undefined }];
@@ -53,7 +58,7 @@ export default function Home() {
 
   const selected = verdicts.find((v) => v.reference.id === selectedId);
 
-  async function run(override?: { script?: string; aud?: AudienceState; confirmed?: Record<string, ResolvedEntity>; byText?: Record<string, ResolvedEntity>; promo?: { show: string; city: string } | null }) {
+  async function run(override?: { script?: string; aud?: AudienceState; confirmed?: Record<string, ResolvedEntity>; byText?: Record<string, ResolvedEntity>; promo?: { show: string; city: string } | null; keepProposals?: boolean }) {
     const s = override?.script ?? script;
     const a = override?.aud ?? aud;
     const conf = override?.confirmed ?? confirmed;
@@ -65,6 +70,7 @@ export default function Home() {
     setResult(null);
     setSwap(null);
     setPromo(null);
+    if (!override?.keepProposals) setBatch(null);
     setEditing(false);
     const promoBody = override?.promo === null ? undefined : override?.promo ?? promoReq;
 
@@ -93,6 +99,7 @@ export default function Home() {
   async function findSwap(v: ReferenceVerdict) {
     if (!v.resolution.entity) return;
     setSwap(null);
+    setSearchingId(v.reference.id);
     setStage(`Finding a swap for "${v.reference.text}"`);
     const s = v.scores[0];
     const res = await fetch("/api/swap", {
@@ -109,24 +116,69 @@ export default function Home() {
     });
     const data = await res.json();
     setStage("");
+    setSearchingId(null);
     if (!res.ok) return setError(data.error ?? "Swap failed");
     setSwap(data);
     setSwapReceipts(data.receipts ?? []);
+    // The action goes to Proposed changes, merged with any other pending lines.
+    const item: BatchItem = { ok: true, line: v.reference.line, text: v.reference.text, result: data };
+    setBatch((b) => ({ items: [item, ...(b?.items.filter((i) => i.line !== item.line) ?? [])], skipped: b?.skipped ?? [] }));
   }
 
-  function acceptSwap(line: string) {
-    if (!selected) return;
+  const flagged = verdicts
+    .filter((v) => v.resolution.entity && (v.band === "red" || (includeAmber && v.band === "amber")))
+    .sort((a, b) => (a.band === b.band ? 0 : a.band === "red" ? -1 : 1)); // worst first: one swap per line
+
+  async function findAllSwaps() {
+    if (!flagged.length) return;
+    setBatch(null);
+    setSwap(null);
+    setError(null);
+    setStage(`Finding swaps for ${flagged.length} flagged reference${flagged.length === 1 ? "" : "s"}`);
+    setBatchBusy(true);
+    try {
+      const res = await fetch("/api/swap-all", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          script,
+          audiences,
+          rules: aud.rules,
+          items: flagged.slice(0, 8).map((v) => ({
+            reference: v.reference,
+            entity: v.resolution.entity,
+            originalPosition: v.scores[0] ? position(v.scores[0].rank, v.scores[0].outOf) : null,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return setError(data.error ?? "Couldn't find swaps");
+      setBatch({ items: data.results, skipped: data.skipped ?? [] });
+      setSwapReceipts((data.results as BatchItem[]).flatMap((r) => (r.ok ? ((r.result as SwapResult & { receipts?: EvidenceRecord[] }).receipts ?? []) : [])));
+    } finally {
+      setStage("");
+      setBatchBusy(false);
+    }
+  }
+
+  function applyBatch(accepts: BatchAccept[]) {
+    if (!accepts.length) return;
     const lines = script.split("\n");
-    lines[selected.reference.line] = line;
+    for (const a of accepts) lines[a.line] = a.newLine;
     const next = lines.join("\n");
-    const entity = swap?.accepted?.candidate;
-    const nextByText = entity ? { ...byText, [entity.name.toLowerCase()]: entity } : byText;
+    const nextByText = { ...byText };
+    for (const a of accepts) if (a.entity) nextByText[a.entity.name.toLowerCase()] = a.entity;
     setByText(nextByText);
     setScript(next);
-    // Re-check the whole script after the change, keeping identities stable.
-    // Confirmations by reference id are dropped: ids can shift when the text changes.
+    // Keep the lines you haven't applied yet; swaps replace whole lines, so their line numbers stay valid.
+    const applied = new Set(accepts.map((a) => a.line));
+    setBatch((b) => {
+      const rest = b?.items.filter((i) => !applied.has(i.line)) ?? [];
+      return rest.length ? { items: rest, skipped: b?.skipped ?? [] } : null;
+    });
+    setSwap(null);
     setConfirmed({});
-    run({ script: next, confirmed: {}, byText: nextByText });
+    run({ script: next, confirmed: {}, byText: nextByText, keepProposals: true });
   }
 
   function confirmEntity(refId: string, e: ResolvedEntity) {
@@ -181,10 +233,28 @@ export default function Home() {
           )}
         </div>
         <div className="flex flex-col gap-4">
-          <EvidencePanel verdict={selected} onSwap={findSwap} onConfirm={confirmEntity} />
-          {swap && <SwapCard result={swap} onAccept={acceptSwap} />}
+          <EvidencePanel verdict={selected} onSwap={findSwap} onConfirm={confirmEntity} searching={searchingId === selected?.reference.id} />
+          {swap && <SwapCard result={swap} />}
         </div>
       </div>
+
+      {!busy && verdicts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            onClick={findAllSwaps}
+            disabled={!flagged.length || Boolean(stage)}
+            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 font-semibold text-white"
+          >
+            {batchBusy ? "Searching…" : `Find swaps for all flagged (${flagged.length})`}
+          </button>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={includeAmber} onChange={(e) => setIncludeAmber(e.target.checked)} />
+            Include amber
+          </label>
+        </div>
+      )}
+
+      {batch && <BatchSwapPanel items={batch.items} skipped={batch.skipped} busy={busy} onApply={applyBatch} onClose={() => setBatch(null)} />}
 
       {aud.mode === "bridge" && <BridgeView verdicts={verdicts} audiences={labels} />}
       {aud.mode === "tour" && <TourHeatmap verdicts={verdicts} cities={labels} />}

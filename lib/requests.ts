@@ -62,3 +62,19 @@ export function toAudience(a: z.infer<typeof AudienceInputSchema>): Audience {
 export function badRequest(err: z.ZodError): Response {
   return Response.json({ error: "Invalid request", issues: err.issues.slice(0, 5) }, { status: 400 });
 }
+
+export const SwapAllBodySchema = z.object({
+  script: ScriptSchema,
+  items: z
+    .array(
+      z.object({
+        reference: z.object({ id: z.string(), text: z.string(), line: z.number().int().min(0), start: z.number(), end: z.number(), kind: z.string(), canonical: z.string().optional() }),
+        entity: EntityWithMetaSchema,
+        originalPosition: z.number().min(0).max(1).nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(8),
+  audiences: z.array(AudienceInputSchema).min(1).max(5),
+  rules: RulesSchema,
+});
