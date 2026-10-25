@@ -47,8 +47,8 @@ export default function Home() {
   const [promo, setPromo] = useState<PromoSummary | null>(null);
   const [batch, setBatch] = useState<{ items: BatchItem[]; skipped: Array<{ text: string; reason: string }> } | null>(null);
   const [includeAmber, setIncludeAmber] = useState(false);
-  const [searchingId, setSearchingId] = useState<string | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
+  const [activeJudge, setActiveJudge] = useState<string | null>(null);
 
   const audiences = useMemo(() => {
     if (aud.mode === "bridge") return [{ ageBand: aud.ageBand, city: aud.city || undefined }, { ageBand: aud.ageBandB, city: aud.cityB || undefined }];
@@ -57,6 +57,9 @@ export default function Home() {
   }, [aud]);
 
   const selected = verdicts.find((v) => v.reference.id === selectedId);
+  // Side panel: statistics for the clicked reference, from Proposed changes (same line).
+  const selectedStatsItem = selected ? batch?.items.find((i) => i.ok && i.line === selected.reference.line && i.text === selected.reference.text) : undefined;
+  const selectedStats = selectedStatsItem && selectedStatsItem.ok ? selectedStatsItem.result : null;
 
   async function run(override?: { script?: string; aud?: AudienceState; confirmed?: Record<string, ResolvedEntity>; byText?: Record<string, ResolvedEntity>; promo?: { show: string; city: string } | null; keepProposals?: boolean }) {
     const s = override?.script ?? script;
@@ -94,35 +97,6 @@ export default function Home() {
       setBusy(false);
       setStage("");
     }
-  }
-
-  async function findSwap(v: ReferenceVerdict) {
-    if (!v.resolution.entity) return;
-    setSwap(null);
-    setSearchingId(v.reference.id);
-    setStage(`Finding a swap for "${v.reference.text}"`);
-    const s = v.scores[0];
-    const res = await fetch("/api/swap", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        script,
-        reference: v.reference,
-        entity: v.resolution.entity,
-        audiences,
-        rules: aud.rules,
-        originalPosition: s ? position(s.rank, s.outOf) : null,
-      }),
-    });
-    const data = await res.json();
-    setStage("");
-    setSearchingId(null);
-    if (!res.ok) return setError(data.error ?? "Swap failed");
-    setSwap(data);
-    setSwapReceipts(data.receipts ?? []);
-    // The action goes to Proposed changes, merged with any other pending lines.
-    const item: BatchItem = { ok: true, line: v.reference.line, text: v.reference.text, result: data };
-    setBatch((b) => ({ items: [item, ...(b?.items.filter((i) => i.line !== item.line) ?? [])], skipped: b?.skipped ?? [] }));
   }
 
   const flagged = verdicts
@@ -188,6 +162,7 @@ export default function Home() {
   }
 
   function pickJudge(j: JudgeScript) {
+    setActiveJudge(j.id);
     const next: AudienceState = {
       ...aud,
       mode: j.mode,
@@ -217,7 +192,7 @@ export default function Home() {
         {result && <VerdictBadge verdict={result.verdict} tweakCount={result.tweakCount} />}
       </header>
 
-      <JudgeModePicker onPick={pickJudge} />
+      <JudgeModePicker onPick={pickJudge} activeId={activeJudge} />
       <AudienceBar value={aud} onChange={setAud} onRun={() => run()} busy={busy} />
 
       {stage && <p className="text-sm text-[var(--muted)]">⋯ {stage}</p>}
@@ -225,16 +200,22 @@ export default function Home() {
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="flex flex-col gap-2">
-          <ScriptPane script={script} onChange={setScript} verdicts={verdicts} selectedId={selectedId} onSelect={setSelectedId} editable={editing} />
+          <ScriptPane script={script} onChange={setScript} verdicts={verdicts} selectedId={selectedId} onSelect={setSelectedId} editable={editing} busy={busy} />
           {!editing && (
-            <button onClick={() => setEditing(true)} className="self-start text-sm text-[var(--accent)]">
+            <button
+              onClick={() => {
+                setEditing(true);
+                setActiveJudge(null); // your own edits: no longer the preloaded script
+              }}
+              className="self-start text-sm text-[var(--accent)]"
+            >
               Edit script
             </button>
           )}
         </div>
         <div className="flex flex-col gap-4">
-          <EvidencePanel verdict={selected} onSwap={findSwap} onConfirm={confirmEntity} searching={searchingId === selected?.reference.id} />
-          {swap && <SwapCard result={swap} />}
+          <EvidencePanel verdict={selected} onConfirm={confirmEntity} />
+          {selectedStats && <SwapCard result={selectedStats} />}
         </div>
       </div>
 

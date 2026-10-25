@@ -3,15 +3,10 @@ import type { ReferenceVerdict, ResolvedEntity } from "@/lib/types";
 
 export function EvidencePanel({
   verdict,
-  onSwap,
   onConfirm,
-  searching,
 }: {
   verdict?: ReferenceVerdict;
-  onSwap: (v: ReferenceVerdict) => void;
   onConfirm: (refId: string, e: ResolvedEntity) => void;
-  /** True while a swap search for this reference is running */
-  searching?: boolean;
 }) {
   if (!verdict) return <div className="panel p-4 text-sm text-[var(--muted)]">Click a highlighted reference to see the evidence.</div>;
   const { reference, resolution, scores, band, reason } = verdict;
@@ -77,11 +72,6 @@ export function EvidencePanel({
 
       <p><span className="text-xs text-[var(--muted)]">Qloo result · </span>{reason}</p>
 
-      {(band === "red" || band === "amber") && resolution.entity && (
-        <button onClick={() => onSwap(verdict)} disabled={searching} className="self-start rounded-lg bg-[var(--accent)] px-3 py-1.5 font-semibold text-white">
-          {searching ? "Searching…" : "Find a swap"}
-        </button>
-      )}
 
       <p className="text-xs text-[var(--muted)]">{LIMIT_NOTE}</p>
     </div>

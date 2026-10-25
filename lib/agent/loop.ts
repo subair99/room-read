@@ -16,7 +16,7 @@ import type {
   SwapResult,
   UserRules,
 } from "../types";
-import { type AgeProfile, NICHE_POPULARITY, SWAP_MIN_POPULARITY, ageIndex, describeIndex, relativeAgeBand, relativePosition, strongestBucket } from "./ageAffinity";
+import { type AgeProfile, NICHE_POPULARITY, ageIndex, familiarityBar, describeIndex, relativeAgeBand, relativePosition, strongestBucket } from "./ageAffinity";
 import { anchorsFor } from "./anchors";
 import { bandFromRank, position, worseBand } from "./bands";
 import { extractReferences } from "./extract";
@@ -262,9 +262,16 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
   return { ...result, summary, receipts: receipts.records };
 
   async function scoreCandidate(candidate: ResolvedEntity): Promise<Comparison> {
-    if (candidate.popularity !== undefined && candidate.popularity < SWAP_MIN_POPULARITY) {
-      return { candidate: null, original: null, detail: `"${candidate.name}" isn't familiar enough to swap in (popularity ${candidate.popularity.toFixed(2)}, needs ${SWAP_MIN_POPULARITY}).` };
+    // Never trade down in familiarity: at least as popular as the original, and above the floor.
+    const bar = familiarityBar(req.entity.popularity);
+    if (candidate.popularity === undefined) {
+      return { candidate: null, original: null, detail: `No familiarity data for "${candidate.name}".` };
     }
+    if (candidate.popularity < bar) {
+      const vs = req.entity.popularity !== undefined ? ` vs original ${req.entity.popularity.toFixed(3)}` : "";
+      return { candidate: null, original: null, detail: `"${candidate.name}" is less familiar than it needs to be (popularity ${candidate.popularity.toFixed(3)}${vs}; needs ${bar.toFixed(3)}).` };
+    }
+    const familiarity = `familiarity ${candidate.popularity.toFixed(3)}${req.entity.popularity !== undefined ? ` vs original ${req.entity.popularity.toFixed(3)}` : ""}`;
     // Scores are "badness" on one 0–1 scale (lower is better) so age and city
     // signals can be combined: age index +0.5 → 0, −0.5 → 1; city position as-is.
     let worstCand = -Infinity;
@@ -308,7 +315,7 @@ export async function runSwap(req: SwapRequest, receipts = new Receipts()): Prom
     const origWorst = worseBand(origBands);
     // A swap must IMPROVE the band: amber → green only; red → amber or green.
     const acceptable = BAND_ORDER[worst] < BAND_ORDER[origWorst === "unknown" ? "red" : origWorst] && worst !== "red" && worst !== "unknown";
-    return { candidate: worstCand, original: worstOrig, detail: `${details.join(" · ")} · lands as ${worst} (original ${origWorst})`, acceptable };
+    return { candidate: worstCand, original: worstOrig, detail: `${details.join(" · ")} · ${familiarity} · lands as ${worst} (original ${origWorst})`, acceptable };
   }
 }
 

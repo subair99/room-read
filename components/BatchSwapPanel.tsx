@@ -33,13 +33,23 @@ export function BatchSwapPanel({
   onApply: (accepts: BatchAccept[]) => void;
   onClose: () => void;
 }) {
-  const swappable = items.filter((i): i is Extract<BatchItem, { ok: true }> => i.ok && Boolean(i.result.accepted?.rewrittenLine));
-  const [picked, setPicked] = useState<Set<number>>(new Set(swappable.map((p) => p.line)));
+  // Every applicable change, one per line: a swap if Qloo found one, otherwise the optional drop.
+  type Option = BatchAccept & { kind: "swap" | "drop" };
+  const options: Option[] = items.flatMap<Option>((i) => {
+    if (!i.ok) return [];
+    const swapLine = i.result.accepted?.rewrittenLine;
+    if (swapLine) return [{ kind: "swap" as const, line: i.line, newLine: swapLine, entity: i.result.accepted!.candidate }];
+    const drop = dropLine(i.result);
+    return drop ? [{ kind: "drop" as const, line: i.line, newLine: drop }] : [];
+  });
+  // Swaps start ticked; drops start unticked (keeping the original is the recommendation).
+  const defaults = () => new Set(options.filter((o) => o.kind === "swap").map((o) => o.line));
+  const [picked, setPicked] = useState<Set<number>>(defaults);
   const [pending, setPending] = useState<string | null>(null);
 
   // New items arrive (or applied ones leave): reset selection and the pressed button.
   useEffect(() => {
-    setPicked(new Set(swappable.map((p) => p.line)));
+    setPicked(defaults());
     setPending(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
@@ -51,6 +61,11 @@ export function BatchSwapPanel({
       else n.add(line);
       return n;
     });
+  const allPicked = options.length > 0 && options.every((o) => picked.has(o.line));
+  const toggleAll = () => setPicked(allPicked ? new Set() : new Set(options.map((o) => o.line)));
+  const chosen = options.filter((o) => picked.has(o.line));
+  const swapsChosen = chosen.filter((o) => o.kind === "swap").length;
+  const dropsChosen = chosen.length - swapsChosen;
 
   const applyOne = (key: string, accept: BatchAccept) => {
     setPending(key);
@@ -58,21 +73,25 @@ export function BatchSwapPanel({
   };
   const applySelected = () => {
     setPending("selected");
-    onApply(
-      swappable
-        .filter((p) => picked.has(p.line))
-        .map((p) => ({ line: p.line, newLine: p.result.accepted!.rewrittenLine!, entity: p.result.accepted!.candidate })),
-    );
+    onApply(chosen.map(({ line, newLine, entity }) => ({ line, newLine, entity })));
   };
   const locked = busy || pending !== null;
 
   return (
     <div className="panel flex flex-col gap-3 p-4 text-sm">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">Proposed changes</h3>
-        <button onClick={onClose} className="rounded px-2 py-1 text-xs text-[var(--muted)]">
-          Close
-        </button>
+        <div className="flex items-center gap-2">
+          {options.length > 1 && (
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={allPicked} onChange={toggleAll} disabled={locked} />
+              Select all ({options.length})
+            </label>
+          )}
+          <button onClick={onClose} className="rounded px-2 py-1 text-xs text-[var(--muted)]">
+            Close
+          </button>
+        </div>
       </div>
 
       {items.map((it) => {
@@ -113,7 +132,10 @@ export function BatchSwapPanel({
                 </p>
                 {drop && (
                   <div className="flex flex-wrap items-start gap-3">
-                    <span className="flex-1 text-[var(--muted)]">Without the reference: {drop}</span>
+                    <label className="flex flex-1 items-start gap-2 text-[var(--muted)]">
+                      <input type="checkbox" className="mt-1" checked={picked.has(it.line)} onChange={() => toggle(it.line)} disabled={locked} />
+                      <span>Without the reference: {drop}</span>
+                    </label>
                     <button
                       disabled={locked}
                       onClick={() => applyOne(`drop-${it.line}`, { line: it.line, newLine: drop })}
@@ -135,14 +157,19 @@ export function BatchSwapPanel({
         </p>
       ))}
 
-      {swappable.length > 1 && (
-        <button
-          onClick={applySelected}
-          disabled={locked || picked.size === 0}
-          className="self-start rounded-lg bg-[var(--green)] px-3 py-1.5 font-semibold text-white"
-        >
-          {pending === "selected" ? "Applying…" : `Apply selected (${picked.size}) and re-check`}
-        </button>
+      {options.length > 1 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={applySelected}
+            disabled={locked || chosen.length === 0}
+            className="rounded-lg bg-[var(--green)] px-3 py-1.5 font-semibold text-white"
+          >
+            {pending === "selected" ? "Applying…" : `Apply selected (${chosen.length}) and re-check`}
+          </button>
+          <span className="text-xs text-[var(--muted)]">
+            {swapsChosen} swap{swapsChosen === 1 ? "" : "s"} · {dropsChosen} drop{dropsChosen === 1 ? "" : "s"}
+          </span>
+        </div>
       )}
     </div>
   );

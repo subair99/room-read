@@ -62,3 +62,15 @@ describe("relative age band (vs anchors)", () => {
     expect(relativePosition(-1, anchors)).toBe(1);
   });
 });
+
+import { familiarityBar } from "../lib/agent/ageAffinity";
+
+describe("familiarity bar for swaps", () => {
+  it("never trades down from a very famous original", () => {
+    expect(familiarityBar(0.995)).toBeCloseTo(0.99, 3);
+  });
+  it("uses the floor for less famous originals or missing data", () => {
+    expect(familiarityBar(0.8)).toBe(0.95);
+    expect(familiarityBar(undefined)).toBe(0.95);
+  });
+});

@@ -37,10 +37,19 @@ export const RED_AT = -0.15;
 /** Below this Qloo popularity, a title is too niche to count as familiar: green drops to amber. */
 export const NICHE_POPULARITY = 0.5;
 /**
- * A swap must be MORE familiar than that: Seinfeld is 0.995, Stranger Things
- * ~0.99. Set SWAP_MIN_POPULARITY to tune.
+ * Qloo popularity is a percentile across a catalogue of hundreds of millions of
+ * entities, so 0.9 still admits names most people don't know. A swap must
+ * clear this floor AND be at least as popular as the reference it replaces
+ * (never trade down in familiarity). Seinfeld is 0.995, Squid Game 0.999.
  */
-export const SWAP_MIN_POPULARITY = Number(process.env.SWAP_MIN_POPULARITY || 0.9);
+export const SWAP_MIN_POPULARITY = Number(process.env.SWAP_MIN_POPULARITY || 0.95);
+/** Small tolerance so near-equal titles (0.991 vs 0.993) both count as "as familiar". */
+export const FAMILIARITY_TOLERANCE = 0.005;
+
+/** The familiarity bar a candidate must clear to replace `original`. */
+export function familiarityBar(originalPopularity?: number): number {
+  return Math.max(SWAP_MIN_POPULARITY, (originalPopularity ?? 0) - FAMILIARITY_TOLERANCE);
+}
 
 export type AgeProfile = Record<string, number>;
 
