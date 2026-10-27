@@ -34,7 +34,7 @@ export async function pickFitting(line: string, original: string, candidates: st
   try {
     const out = await completeJson<FitResult>(
       { system: FIT_SYSTEM, user: fitUser(line, original, candidates), temperature: 0 },
-      z.object({ job: z.string(), fits: z.array(z.object({ name: z.string(), why: z.string() })) }) as unknown as z.ZodType<FitResult>,
+      z.object({ job: z.string(), fits: z.array(z.object({ name: z.string(), why: z.string() })) }),
     );
     const known = new Set(candidates.map((c) => c.toLowerCase()));
     return { job: out.job, fits: out.fits.filter((f) => known.has(f.name.toLowerCase())) };

@@ -20,8 +20,12 @@ export async function completeText(call: LlmCall): Promise<string> {
   return anthropic(call);
 }
 
-/** Ask for JSON and validate it. Retries once with the validation error. */
-export async function completeJson<T>(call: LlmCall, schema: z.ZodType<T>): Promise<T> {
+/**
+ * Ask for JSON and validate it. Retries once with the validation error.
+ * Only the schema's OUTPUT type matters here; its input type may differ
+ * (e.g. fields with .default() are optional on input).
+ */
+export async function completeJson<T>(call: LlmCall, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T> {
   let user = `${call.user}\n\nRespond with JSON only. No prose, no code fences.`;
   for (let attempt = 0; attempt < 2; attempt++) {
     const text = await completeText({ ...call, user });
