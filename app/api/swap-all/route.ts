@@ -1,6 +1,7 @@
 import { runSwap } from "@/lib/agent/loop";
 import { allow, clientIp, tooMany } from "@/lib/guard/rateLimit";
 import { badRequest, SwapAllBodySchema, toAudience } from "@/lib/requests";
+import { jsonStreamResponse } from "@/lib/sse";
 import { mapLimit } from "@/lib/util/pool";
 
 export const runtime = "nodejs";
@@ -23,6 +24,8 @@ export async function POST(req: Request) {
   const todo = items.filter((it) => (seenLines.has(it.reference.line) ? false : (seenLines.add(it.reference.line), true)));
   const skipped = items.filter((it) => !todo.includes(it)).map((it) => ({ referenceId: it.reference.id, text: it.reference.text, reason: "Same line as another flagged reference. Re-check after accepting, then swap it." }));
 
+  // Streamed with keep-alives: a cold batch can take a minute, longer than proxies wait on an idle connection.
+  return jsonStreamResponse(async () => {
   // Two swaps at a time; each swap already runs its own Qloo calls in parallel.
   const results = await mapLimit(todo, 2, async (it) => {
     try {
@@ -32,5 +35,6 @@ export async function POST(req: Request) {
       return { ok: false as const, line: it.reference.line, text: it.reference.text, error: err instanceof Error ? err.message : String(err) };
     }
   });
-  return Response.json({ results, skipped });
+  return { results, skipped };
+  });
 }

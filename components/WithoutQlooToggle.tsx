@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { BaselineItem } from "@/lib/baseline/llmOnly";
+import { fetchResult } from "@/lib/client/stream";
 
 /** Side-by-side: the LLM alone vs RoomRead's Qloo-grounded verdict. */
 export function WithoutQlooToggle({ script, audienceLabel }: { script: string; audienceLabel: string }) {
@@ -13,9 +14,7 @@ export function WithoutQlooToggle({ script, audienceLabel }: { script: string; a
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/baseline", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ script, audienceLabel }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Baseline failed");
+      const data = await fetchResult<{ items: BaselineItem[] }>("/api/baseline", { script, audienceLabel });
       setItems(data.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

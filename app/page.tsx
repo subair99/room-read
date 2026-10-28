@@ -14,7 +14,7 @@ import { VerdictBadge } from "@/components/VerdictBadge";
 import { WithoutQlooToggle } from "@/components/WithoutQlooToggle";
 import { position } from "@/lib/agent/bands";
 import { audienceLabel } from "@/lib/audience";
-import { streamAgent } from "@/lib/client/stream";
+import { fetchResult, streamAgent } from "@/lib/client/stream";
 import type { EvidenceRecord } from "@/lib/evidence/record";
 import type { AgentEvent, CheckResult, PromoSummary, ReferenceVerdict, ResolvedEntity, SwapResult } from "@/lib/types";
 
@@ -111,24 +111,20 @@ export default function Home() {
     setStage(`Finding swaps for ${flagged.length} flagged reference${flagged.length === 1 ? "" : "s"}`);
     setBatchBusy(true);
     try {
-      const res = await fetch("/api/swap-all", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          script,
-          audiences,
-          rules: aud.rules,
-          items: flagged.slice(0, 8).map((v) => ({
-            reference: v.reference,
-            entity: v.resolution.entity,
-            originalPosition: v.scores[0] ? position(v.scores[0].rank, v.scores[0].outOf) : null,
-          })),
-        }),
+      const data = await fetchResult<{ results: BatchItem[]; skipped: Array<{ text: string; reason: string }> }>("/api/swap-all", {
+        script,
+        audiences,
+        rules: aud.rules,
+        items: flagged.slice(0, 8).map((v) => ({
+          reference: v.reference,
+          entity: v.resolution.entity,
+          originalPosition: v.scores[0] ? position(v.scores[0].rank, v.scores[0].outOf) : null,
+        })),
       });
-      const data = await res.json();
-      if (!res.ok) return setError(data.error ?? "Couldn't find swaps");
       setBatch({ items: data.results, skipped: data.skipped ?? [] });
       setSwapReceipts((data.results as BatchItem[]).flatMap((r) => (r.ok ? ((r.result as SwapResult & { receipts?: EvidenceRecord[] }).receipts ?? []) : [])));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setStage("");
       setBatchBusy(false);
