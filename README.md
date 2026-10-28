@@ -6,7 +6,7 @@
 
 Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com) during the submission period (30 Sep – 30 Oct 2026).
 
-- **Live demo:** _add URL_
+- **Live demo:** https://roomread.0bfx3e0ybcxa2.us-east-1.cs.amazonlightsail.com/
 - **License:** MIT
 
 ## The problem
