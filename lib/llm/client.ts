@@ -13,6 +13,32 @@ export interface LlmCall {
   temperature?: number;
 }
 
+/**
+ * fetch with a timeout and bounded retries. Retries network drops ("fetch failed"),
+ * timeouts, 429 and 5xx; never retries other 4xx (bad key, bad request).
+ */
+const LLM_TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 60000);
+const LLM_RETRIES = Number(process.env.LLM_RETRIES || 3);
+
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= LLM_RETRIES; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * 2 ** (attempt - 1)));
+    try {
+      const res = await fetch(url, { ...init, signal: AbortSignal.timeout(LLM_TIMEOUT_MS) });
+      if ((res.status === 429 || res.status >= 500) && attempt < LLM_RETRIES) {
+        lastErr = new Error(`LLM API ${res.status}`);
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`Model API unreachable after ${LLM_RETRIES + 1} tries: ${msg}`);
+}
+
 export async function completeText(call: LlmCall): Promise<string> {
   const provider = (process.env.LLM_PROVIDER || "anthropic").toLowerCase();
   if (provider === "azure") return azure(call);
@@ -57,7 +83,7 @@ function safeJson(text: string): unknown {
 async function anthropic({ system, user, maxTokens = 1500, temperature = 0.2 }: LlmCall): Promise<string> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
@@ -80,7 +106,7 @@ async function azure({ system, user, maxTokens = 1500, temperature = 0.2 }: LlmC
   const version = process.env.AZURE_OPENAI_API_VERSION || "2024-10-21";
   if (!endpoint || !key || !deployment) throw new Error("Azure OpenAI env vars are not set");
   const url = `${endpoint.replace(/\/$/, "")}/openai/deployments/${deployment}/chat/completions?api-version=${version}`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: { "content-type": "application/json", "api-key": key },
     body: JSON.stringify({
@@ -103,7 +129,7 @@ async function openaiCompatible({ system, user, maxTokens = 1500, temperature = 
   const key = process.env.LLM_API_KEY;
   const model = process.env.LLM_MODEL;
   if (!base || !key || !model) throw new Error("LLM_BASE_URL, LLM_API_KEY and LLM_MODEL must be set");
-  const res = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
+  const res = await fetchWithRetry(`${base.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({

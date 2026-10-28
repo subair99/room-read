@@ -8,7 +8,6 @@ Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com) (30 Sep – 30 
 
 | | |
 | --- | --- |
-| **Live demo** | **[ADD LIGHTSAIL URL]** (no sign-up; open a judge tab and press Run) |
 | **Demo video** | See below |
 | **License** | [MIT](LICENSE) |
 
@@ -28,7 +27,7 @@ for your own thumbnail, e.g. docs/screenshots/video-thumbnail.png, and the link 
 
 | Check: the stand-up opener | Bridge: the wedding toast | Tour: the sneaker ad |
 | --- | --- | --- |
-| ![Check mode](docs/screenshots/check.png) | ![Bridge mode](docs/screenshots/bridge.png) | ![Tour mode](docs/screenshots/tour.png) |
+| ![Check mode](images/room-read-image-01.png) | ![Bridge mode](images/room-read-image-02.png) | ![Tour mode](images/room-read-image-03.png) |
 
 ## The problem
 
@@ -124,7 +123,7 @@ A redacted request-to-result walkthrough is in [docs/request-to-result.md](docs/
 
 ## Built with
 
-Qloo MCP harness · Model Context Protocol SDK · Qwen (`qwen-plus`, via Alibaba Cloud Model Studio's OpenAI-compatible API) · Next.js 15 · React 19 · TypeScript · Tailwind CSS · Zod · Node.js built-in SQLite (response cache) · Server-Sent Events · Docker · AWS Lightsail
+Qloo MCP harness · Model Context Protocol SDK · Qwen (`qwen3.8-max`, via Alibaba Cloud Model Studio's OpenAI-compatible API) · Next.js 15 · React 19 · TypeScript · Tailwind CSS · Zod · Node.js built-in SQLite (response cache) · Server-Sent Events · Docker · AWS Lightsail
 
 ## Run it locally
 
@@ -157,7 +156,7 @@ docker run -p 3000:3000 \
   -e QLOO_TRUSTED_BASE_URL=https://hackathon.api.qloo.com/ \
   -e LLM_PROVIDER=openai-compatible \
   -e LLM_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1 \
-  -e LLM_API_KEY=... -e LLM_MODEL=qwen-plus \
+  -e LLM_API_KEY=... -e LLM_MODEL=qwen3.8-max-0902 \
   roomread
 ```
 
@@ -165,13 +164,20 @@ On Lightsail: `aws lightsail push-container-image`, then `create-container-servi
 
 ## Evaluation
 
-Twelve original scripts, each run through an AI-only baseline and through RoomRead. Measures:
-- agreement with Qloo's data
-- unsupported claims made by the baseline
-- rank correlation (Spearman)
-- swap quality, rated by blind reviewers
+Twelve original scripts (stand-up, toasts, ads, keynotes, lessons; 36 references), each run through RoomRead and through an AI-only baseline: the same model, script and audience, with no Qloo data. Run on 28 Oct 2026. Full table: [eval/results.md](eval/results.md).
 
-See [eval/results.md](eval/results.md).
+| Measure | Result |
+| --- | --- |
+| References resolved to a Qloo entity | 81% (29 of 36) |
+| AI-only "this will land" calls that Qloo scores **red** for that audience | **27% (6 of 22)** |
+| Red references the AI alone flagged as risky | **0 of 6** |
+| Unsupported "universal / iconic" claims | AI alone **6** · RoomRead **0** |
+| Red references with a swap that passed every check | 2 of 6 (the other 4: "keep the original") |
+| References with no Qloo signal, so no guess | 10 of 36 |
+
+Example swaps: *"Their first date was a ~~Lionel Richie~~ **Jonas Brothers** cover band"* (Bridge, 18–34 + 55+); *"Opportunity cost is choosing between ~~Elden Ring~~ **Fortnite** and sleep"* (18–34).
+
+**Reading it honestly:** RoomRead is strict. Most references land mid-pack among the anchor titles (18 of 36 amber), so it says "mixed" far more often than "lands". It turns down 4 of 6 swaps rather than force a weaker line. The sample is small and it measures grounding, not whether a joke is funny. Blind reviewer ratings of the swaps are not yet included.
 
 ## Responsible use and known limitations
 
