@@ -3,7 +3,7 @@
   "title": "Physics analogy",
   "mode": "check",
   "audience": { "ageBand": "18-34" },
-  "script": "Momentum is why a Fast & Furious car can't stop on a dime.\nFriction is the reason your Roomba gives up on the rug.\nAnd conservation of energy is why Sonic can't really run forever.",
-  "note": "Original lesson lines for a university intro class.",
+  "script": "Momentum is why a Fast & Furious car can't stop on a dime.\nFriction is why you spin out on the ice track in Mario Kart.\nAnd conservation of energy is why Sonic the Hedgehog can't really run forever.",
+  "note": "Original lesson lines for a university intro class, audience 18-34 in the United States. Uses full titles Qloo can resolve (Mario Kart, Sonic the Hedgehog) so every reference gets scored.",
   "cached": null
 }

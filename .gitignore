@@ -13,3 +13,5 @@ recordings/
 .DS_Store
 next-env.d.ts
 *.tsbuildinfo
+containers.json
+public-endpoint.json

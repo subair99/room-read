@@ -4,6 +4,6 @@
   "mode": "check",
   "audience": { "ageBand": "35-54", "city": "Chicago" },
   "script": "Our old onboarding felt like the Game of Thrones finale: long, confusing, and everyone left angry.\nNow it's more like The Great British Bake Off: calm, clear, and someone always says well done.\nThink of the new dashboard as Waze for your pipeline.",
-  "note": "Original keynote lines.",
+  "note": "Original keynote lines. Beats: Bake Off and Waze land with Chicago 35-54. Game of Thrones does a specific job (a famously disappointing finale); RoomRead only swaps it if a familiar title can do the same job, otherwise it advises keeping it.",
   "cached": null
 }

@@ -6,6 +6,6 @@
   "cities": ["Houston", "Chicago", "Atlanta", "Los Angeles", "New York"],
   "script": "Built for the court, styled for the block.\nLighter than your Spotify Wrapped is embarrassing.\nSmooth as a Frank Ocean deep cut.\nClassic as a Sunday night with The Simpsons.\nNew drop. Your city. Your move.",
   "promo": { "show": "A one-night sneaker launch party with a live DJ set", "city": "Atlanta" },
-  "note": "Original ad copy for a fictional brand. Tour heatmap plus a self-checked promo blurb.",
+  "note": "Original ad copy for a fictional brand. Beats: the heatmap changes by city (Frank Ocean green in Houston and Atlanta, amber elsewhere in testing); The Simpsons is red for 18-34 everywhere; RoomRead writes an Atlanta promo blurb and checks its own copy.",
   "cached": null
 }

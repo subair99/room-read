@@ -3,7 +3,7 @@
   "title": "Stand-up opener",
   "mode": "check",
   "audience": { "ageBand": "18-34", "city": "Houston" },
-  "script": "My dad still thinks he can win any argument with a Seinfeld quote.\nLast week he tried one on my landlord. The rent went up.\nMy roommate plans her whole week around Love Island.\nAnd I still log into MySpace just to see who made my top eight in 2007.",
-  "note": "Original material. Expected beat: one red reference turns green after a re-checked swap.",
+  "script": "My dad still thinks he can win any argument with a Seinfeld quote.\nLast week he tried one on my landlord. The rent went up.\nMy mum, meanwhile, plans dinner around Wheel of Fortune.\nMy roommate plans her whole week around Love Island.\nAnd I still log into MySpace just to see who made my top eight in 2007.",
+  "note": "Original material. Beats: Seinfeld is weak for Houston 18-34 and swaps to a show this crowd loves (Stranger Things in testing). Wheel of Fortune is red, but the joke is ABOUT mum, so RoomRead should advise keeping it. Love Island lands. MySpace has no Qloo signal: RoomRead won't guess.",
   "cached": null
 }

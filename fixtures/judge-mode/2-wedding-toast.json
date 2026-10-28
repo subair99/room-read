@@ -3,7 +3,7 @@
   "title": "Wedding toast (Bridge)",
   "mode": "bridge",
   "audiences": [{ "ageBand": "18-34" }, { "ageBand": "55+" }],
-  "script": "Tunde and Amaka met at karaoke, both reaching for the same Whitney Houston song.\nThey've been doing duets ever since, mostly arguing over who gets the Beyoncé part.\nTheir first holiday was a road trip with nothing but Fela Kuti and a broken GPS.\nMay your marriage outlast every season of Big Brother.",
-  "note": "Original material; the couple is fictional. Bridge: friends 18-34 and parents 55+.",
+  "script": "Tunde and Amaka met at karaoke, both reaching for the same Whitney Houston song.\nThey've been doing duets ever since, mostly arguing over who gets the Beyoncé part.\nTheir first holiday was a road trip with nothing but Fela Kuti and a broken GPS.\nMay your marriage outlast every season of Grey's Anatomy.",
+  "note": "Original material; the couple is fictional. Bridge: friends 18-34 and parents 55+. Beats: the AI-only baseline says Whitney and Beyoncé land for everyone; Qloo says otherwise. Each reference is judged on the weaker crowd. Fela Kuti is the culturally right pick for this couple: amber, and the writer keeps it.",
   "cached": null
 }
