@@ -13,7 +13,7 @@ Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com) (30 Sep – 30 
 
 ## Demo video
 
-[![Watch the RoomRead demo](https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg)](https://youtu.be/VIDEO_ID)
+[![Watch the RoomRead demo](room-read/images/RoomRead-thumbnail.jpg)](https://youtu.be/xaflmFM0xoM)
 
 *Click the thumbnail to watch (about 2½ minutes): Check, Bridge and Tour modes on the five judge scripts.*
 
